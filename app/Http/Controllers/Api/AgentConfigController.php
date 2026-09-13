@@ -30,6 +30,11 @@ class AgentConfigController extends Controller
 
         $githubRepo = config('app.github_repo', env('GITHUB_REPO', 'MuslimGunawan/smartlab-agent'));
 
+        $blocklist = \App\Models\BlocklistApp::where('aktif', true)
+            ->pluck('process_name')
+            ->values()
+            ->all();
+
         return response()->json([
             'success' => true,
             'data' => [
@@ -37,6 +42,7 @@ class AgentConfigController extends Controller
                 'lab_id' => $computer->lab_id,
                 'lab_nama' => $computer->lab?->nama_lab,
                 'schedules' => $schedules,
+                'blocklist' => $blocklist,
                 'kiosk_settings' => [
                     'disable_taskmgr' => $kioskSetting?->disable_taskmgr ?? false,
                     'disable_cmd' => $kioskSetting?->disable_cmd ?? false,

@@ -34,9 +34,17 @@ class ComputerController extends Controller
 
     public function show(Computer $computer): View
     {
-        $computer->load(['lab', 'commands' => function ($q) {
-            $q->latest()->take(20);
-        }]);
+        $computer->load([
+            'lab',
+            'hardwareSpec',
+            'diskPartitions',
+            'installedSoftware' => function ($q) {
+                $q->orderBy('nama', 'asc');
+            },
+            'commands' => function ($q) {
+                $q->latest()->take(20);
+            },
+        ]);
 
         $labs = Lab::orderBy('nama_lab')->get();
 
@@ -136,5 +144,64 @@ class ComputerController extends Controller
         }
 
         return back()->with('error', "Gagal mengirim paket Wake-on-LAN. Pastikan format MAC Address valid.");
+    }
+
+    public function uninstallSoftware(Request $request, Computer $computer, $softwareId): RedirectResponse
+    {
+        $software = \App\Models\InstalledSoftware::where('computer_id', $computer->id)->findOrFail($softwareId);
+
+        \App\Models\SoftwareAction::create([
+            'computer_id' => $computer->id,
+            'software_name' => $software->nama,
+            'aksi' => 'uninstall',
+            'status' => 'pending',
+            'dikirim_oleh' => Auth::id(),
+        ]);
+
+        $command = Command::create([
+            'computer_id' => $computer->id,
+            'lab_id' => $computer->lab_id,
+            'tipe' => 'uninstall_software',
+            'payload' => [
+                'software_id' => $software->id,
+                'software_name' => $software->nama,
+                'uninstall_string' => $software->uninstall_string,
+            ],
+            'status' => 'pending',
+            'created_by' => Auth::id(),
+        ]);
+
+        AuditLog::log(
+            Auth::id(),
+            'UNINSTALL_SOFTWARE',
+            "{$computer->nama_pc} ({$software->nama})",
+            ['command_id' => $command->id, 'software' => $software->nama]
+        );
+
+        return back()->with('success', "Perintah uninstall software '{$software->nama}' berhasil dikirim ke {$computer->nama_pc}.");
+    }
+
+    public function cleanup(Request $request, Computer $computer): RedirectResponse
+    {
+        $command = Command::create([
+            'computer_id' => $computer->id,
+            'lab_id' => $computer->lab_id,
+            'tipe' => 'cleanup',
+            'payload' => [
+                'clean_temp' => true,
+                'clean_recycle_bin' => true,
+            ],
+            'status' => 'pending',
+            'created_by' => Auth::id(),
+        ]);
+
+        AuditLog::log(
+            Auth::id(),
+            'CLEANUP_SYSTEM',
+            $computer->nama_pc,
+            ['command_id' => $command->id]
+        );
+
+        return back()->with('success', "Perintah pembersihan sampah sistem (%TEMP% & Recycle Bin) dikirim ke {$computer->nama_pc}.");
     }
 }

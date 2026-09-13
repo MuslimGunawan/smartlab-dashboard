@@ -2,11 +2,13 @@
 
 use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\BlocklistController;
 use App\Http\Controllers\ComputerController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\KioskController;
 use App\Http\Controllers\LabController;
 use App\Http\Controllers\ScheduleController;
+use App\Http\Controllers\ViolationController;
 use Illuminate\Support\Facades\Route;
 
 // Authentication
@@ -37,6 +39,8 @@ Route::middleware('auth')->group(function () {
     Route::delete('/computers/{computer}', [ComputerController::class, 'destroy'])->name('computers.destroy');
     Route::post('/computers/{computer}/commands', [ComputerController::class, 'sendCommand'])->name('computers.commands');
     Route::post('/computers/{computer}/wake', [ComputerController::class, 'wake'])->name('computers.wake');
+    Route::post('/computers/{computer}/cleanup', [ComputerController::class, 'cleanup'])->name('computers.cleanup');
+    Route::post('/computers/{computer}/software/{softwareId}/uninstall', [ComputerController::class, 'uninstallSoftware'])->name('computers.software.uninstall');
 
     // Schedules (Fase 2)
     Route::get('/schedules', [ScheduleController::class, 'index'])->name('schedules.index');
@@ -47,6 +51,16 @@ Route::middleware('auth')->group(function () {
     // Kiosk Mode (Fase 2)
     Route::get('/kiosk-mode', [KioskController::class, 'index'])->name('kiosk.index');
     Route::post('/labs/{lab}/kiosk', [KioskController::class, 'updateLab'])->name('kiosk.update-lab');
+
+    // Blocklist Apps (Fase 3)
+    Route::get('/blocklist', [BlocklistController::class, 'index'])->name('blocklist.index');
+    Route::post('/blocklist', [BlocklistController::class, 'store'])->name('blocklist.store');
+    Route::patch('/blocklist/{blocklist}/toggle', [BlocklistController::class, 'toggle'])->name('blocklist.toggle');
+    Route::delete('/blocklist/{blocklist}', [BlocklistController::class, 'destroy'])->name('blocklist.destroy');
+
+    // Violations (Fase 3)
+    Route::get('/violations', [ViolationController::class, 'index'])->name('violations.index');
+    Route::patch('/violations/{violation}/resolve', [ViolationController::class, 'resolve'])->name('violations.resolve');
 
     // Audit Logs & Commands History
     Route::get('/audit-logs', [AuditLogController::class, 'index'])->name('audit-logs.index');

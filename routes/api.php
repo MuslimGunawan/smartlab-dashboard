@@ -22,5 +22,8 @@ Route::prefix('v1')->group(function () {
         Route::post('/agent/heartbeat', [AgentHeartbeatController::class, 'heartbeat']);
         Route::post('/agent/commands/{id}/ack', [AgentCommandController::class, 'ack']);
         Route::get('/agent/config', [AgentConfigController::class, 'getConfig']);
+        Route::post('/agent/hardware', [\App\Http\Controllers\Api\AgentHardwareController::class, 'sync']);
+        Route::post('/agent/software', [\App\Http\Controllers\Api\AgentSoftwareController::class, 'sync']);
+        Route::post('/agent/violations', [\App\Http\Controllers\Api\AgentViolationController::class, 'report']);
     });
 });

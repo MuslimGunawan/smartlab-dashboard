@@ -11,29 +11,35 @@
 
 @section('content')
     <div style="display: grid; grid-template-columns: 1fr 340px; gap: 24px; margin-bottom: 28px;">
-        <!-- Left Column: Specs & Settings -->
-        <div>
+        <!-- Left Column: Specs, Storage, Software & Commands -->
+        <div style="display: flex; flex-direction: column; gap: 24px;">
             <!-- Main Info Card -->
-            <div class="card" style="margin-bottom: 24px;">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
                     <div>
                         <div style="display: flex; align-items: center; gap: 12px;">
-                            <h3 style="font-size: 22px; font-weight: 800; color: var(--gray-900);">{{ $computer->nama_pc }}</h3>
+                            <h3 style="font-size: 22px; font-weight: 800; color: var(--gray-900); margin: 0;">{{ $computer->nama_pc }}</h3>
                             @php $isOnline = $computer->isOnline(); @endphp
                             <span class="badge {{ $isOnline ? 'badge-online' : 'badge-offline' }}">
                                 {{ $isOnline ? 'Online' : 'Offline' }}
                             </span>
                         </div>
-                        <p style="font-size: 13px; color: var(--gray-500); margin-top: 4px;">
+                        <p style="font-size: 13px; color: var(--gray-500); margin: 4px 0 0 0;">
                             Hostname: <strong>{{ $computer->hostname ?? '-' }}</strong> | Lab: <strong>{{ $computer->lab?->nama_lab ?? 'Belum Ditentukan' }}</strong>
                         </p>
                     </div>
 
                     <!-- Quick Command Actions -->
                     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                        <button onclick="openBroadcastModal()" class="btn btn-secondary btn-sm" style="color: var(--unimal-green);">
+                        <button onclick="openBroadcastModal()" class="btn btn-secondary btn-sm" style="color: var(--unimal-green);" title="Kirim Pesan Melayang ke Layar">
                             Pesan Layar
                         </button>
+                        <form action="{{ route('computers.cleanup', $computer) }}" method="POST" onsubmit="return confirm('Jalankan pembersihan file sampah (%TEMP% & Recycle Bin) pada {{ $computer->nama_pc }}?');">
+                            @csrf
+                            <button type="submit" class="btn btn-secondary btn-sm" title="Bersihkan file sementara dan cache">
+                                🧹 Bersihkan PC
+                            </button>
+                        </form>
                         <form action="{{ route('computers.wake', $computer) }}" method="POST">
                             @csrf
                             <button type="submit" class="btn btn-gold btn-sm" title="Kirim Magic Packet Wake-on-LAN">
@@ -56,10 +62,10 @@
                 </div>
 
                 <!-- Info Grid -->
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; padding: 18px; background: var(--gray-50); border-radius: var(--radius-md); border: 1px solid var(--gray-200);">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; padding: 16px; background: var(--gray-50); border-radius: var(--radius-md); border: 1px solid var(--gray-200);">
                     <div>
                         <div style="font-size: 11px; color: var(--gray-400); font-weight: 700; text-transform: uppercase;">Alamat IP</div>
-                        <div style="font-size: 14px; font-weight: 700; color: var(--gray-800); margin-top: 2px;">
+                        <div style="font-size: 13.5px; font-weight: 700; color: var(--gray-800); margin-top: 2px;">
                             <code>{{ $computer->ip_terakhir ?? '-' }}</code>
                         </div>
                     </div>
@@ -93,6 +99,143 @@
                             {{ $computer->last_seen_at ? $computer->last_seen_at->diffForHumans() : 'Belum pernah' }}
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- Hardware Specs & Storage Partitions (Fase 3) -->
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h4 style="font-size: 16px; font-weight: 800; color: var(--gray-900); margin: 0; display: flex; align-items: center; gap: 8px;">
+                        <span>🖥️ Spesifikasi Hardware & Partisi Storage</span>
+                    </h4>
+                    <span style="font-size: 11.5px; color: var(--gray-400);">Disinkronisasi otomatis via WMI</span>
+                </div>
+
+                @if($computer->hardwareSpec)
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 20px;">
+                        <div style="background: var(--gray-50); padding: 12px 14px; border-radius: 8px; border: 1px solid var(--gray-200);">
+                            <div style="font-size: 11px; color: var(--gray-500); font-weight: 700;">PROCESSOR (CPU)</div>
+                            <div style="font-size: 13px; font-weight: 700; color: var(--gray-900); margin-top: 2px;">
+                                {{ $computer->hardwareSpec->processor ?: 'Tidak diketahui' }}
+                            </div>
+                        </div>
+                        <div style="background: var(--gray-50); padding: 12px 14px; border-radius: 8px; border: 1px solid var(--gray-200);">
+                            <div style="font-size: 11px; color: var(--gray-500); font-weight: 700;">TOTAL RAM</div>
+                            <div style="font-size: 13px; font-weight: 700; color: var(--gray-900); margin-top: 2px;">
+                                {{ $computer->hardwareSpec->ram_gb ? number_format($computer->hardwareSpec->ram_gb, 1) . ' GB' : 'Tidak diketahui' }}
+                            </div>
+                        </div>
+                        <div style="background: var(--gray-50); padding: 12px 14px; border-radius: 8px; border: 1px solid var(--gray-200);">
+                            <div style="font-size: 11px; color: var(--gray-500); font-weight: 700;">SISTEM OPERASI</div>
+                            <div style="font-size: 13px; font-weight: 700; color: var(--gray-900); margin-top: 2px;">
+                                {{ $computer->hardwareSpec->os_version ?: 'Windows 10/11' }}
+                            </div>
+                        </div>
+                        <div style="background: var(--gray-50); padding: 12px 14px; border-radius: 8px; border: 1px solid var(--gray-200);">
+                            <div style="font-size: 11px; color: var(--gray-500); font-weight: 700;">SERIAL NUMBER PC</div>
+                            <div style="font-size: 13px; font-weight: 700; color: var(--gray-900); margin-top: 2px;">
+                                <code>{{ $computer->hardwareSpec->serial_number ?: '-' }}</code>
+                            </div>
+                        </div>
+                    </div>
+                @else
+                    <div style="padding: 16px; background: var(--gray-50); border-radius: 8px; color: var(--gray-500); font-size: 13px; margin-bottom: 16px;">
+                        Data spesifikasi hardware belum diterima dari Agent. Menunggu sinkronisasi pertama kali.
+                    </div>
+                @endif
+
+                <!-- Partisi Disk -->
+                <div style="font-size: 13px; font-weight: 700; color: var(--gray-800); margin-bottom: 10px;">Partisi Hard Drive / SSD:</div>
+                @if($computer->diskPartitions && $computer->diskPartitions->count() > 0)
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        @foreach($computer->diskPartitions as $part)
+                            @php
+                                $total = $part->total_gb > 0 ? $part->total_gb : 1;
+                                $free = $part->free_gb;
+                                $used = max(0, $total - $free);
+                                $percentUsed = min(100, round(($used / $total) * 100));
+                                $color = $percentUsed > 90 ? 'var(--danger)' : ($percentUsed > 80 ? 'var(--unimal-gold)' : 'var(--unimal-green)');
+                            @endphp
+                            <div style="background: #ffffff; border: 1px solid var(--gray-200); border-radius: 8px; padding: 12px 16px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                    <div style="font-weight: 700; font-size: 14px; color: var(--gray-900);">
+                                        Drive {{ $part->drive_letter }}
+                                    </div>
+                                    <div style="font-size: 12px; color: var(--gray-600);">
+                                        <strong>{{ number_format($free, 1) }} GB</strong> sisa dari <strong>{{ number_format($total, 1) }} GB</strong> ({{ $percentUsed }}% terpakai)
+                                    </div>
+                                </div>
+                                <div style="width: 100%; height: 8px; background: var(--gray-200); border-radius: 4px; overflow: hidden;">
+                                    <div style="width: {{ $percentUsed }}%; height: 100%; background: {{ $color }}; transition: width 0.3s ease;"></div>
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                @else
+                    <div style="font-size: 12.5px; color: var(--gray-400); font-style: italic;">
+                        Belum ada informasi partisi harddisk.
+                    </div>
+                @endif
+            </div>
+
+            <!-- Installed Software (Fase 3) -->
+            <div class="card" style="padding: 0; overflow: hidden;">
+                <div style="padding: 16px 20px; border-bottom: 1px solid var(--gray-200); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                    <div>
+                        <h4 style="font-size: 16px; font-weight: 800; color: var(--gray-900); margin: 0;">
+                            Software Terinstall ({{ $computer->installedSoftware->count() }})
+                        </h4>
+                        <span style="font-size: 12px; color: var(--gray-500);">Daftar aplikasi resmi dan pihak ketiga dari Windows Registry</span>
+                    </div>
+                    <div>
+                        <input type="text" id="softwareSearch" onkeyup="filterSoftware()" placeholder="Cari nama software..." class="form-control" style="width: 220px; padding: 6px 12px; font-size: 12.5px;">
+                    </div>
+                </div>
+
+                <div style="max-height: 400px; overflow-y: auto;">
+                    <table class="data-table" id="softwareTable">
+                        <thead>
+                            <tr>
+                                <th>Nama Software</th>
+                                <th>Versi</th>
+                                <th>Ukuran</th>
+                                <th>Tgl Install</th>
+                                <th style="text-align: right;">Aksi Remote</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @forelse($computer->installedSoftware as $sw)
+                                <tr>
+                                    <td>
+                                        <div style="font-weight: 700; color: var(--gray-900); font-size: 13px;">{{ $sw->nama }}</div>
+                                    </td>
+                                    <td style="font-size: 12px; color: var(--gray-600);">{{ $sw->versi ?: '-' }}</td>
+                                    <td style="font-size: 12px; color: var(--gray-600);">
+                                        {{ $sw->ukuran_kb ? number_format($sw->ukuran_kb / 1024, 1) . ' MB' : '-' }}
+                                    </td>
+                                    <td style="font-size: 12px; color: var(--gray-600);">{{ $sw->tanggal_install ?: '-' }}</td>
+                                    <td style="text-align: right;">
+                                        @if($sw->uninstall_string)
+                                            <form action="{{ route('computers.software.uninstall', [$computer, $sw->id]) }}" method="POST" style="margin: 0;" onsubmit="return confirm('Yakin ingin menjalankan silent uninstall untuk software {{ $sw->nama }} dari PC ini?');">
+                                                @csrf
+                                                <button type="submit" class="btn btn-secondary btn-sm" style="color: var(--danger); font-weight: 700;" title="Jalankan Silent Uninstall">
+                                                    Uninstall
+                                                </button>
+                                            </form>
+                                        @else
+                                            <span style="font-size: 11px; color: var(--gray-400);">No Uninstaller</span>
+                                        @endif
+                                    </td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="5" style="text-align: center; color: var(--gray-400); padding: 30px;">
+                                        Belum ada daftar software yang terdata dari komputer ini.
+                                    </td>
+                                </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
@@ -194,7 +337,7 @@
 <div id="broadcastModal" class="modal-backdrop">
     <div class="modal-box">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <h3 style="font-size: 18px; font-weight: 800; color: var(--gray-900);">Kirim Pesan ke Layar PC</h3>
+            <h3 style="font-size: 18px; font-weight: 800; color: var(--gray-900); margin: 0;">Kirim Pesan ke Layar PC</h3>
             <button type="button" onclick="closeBroadcastModal()" style="background:none; border:none; font-size:20px; color:var(--gray-400); cursor:pointer;">&times;</button>
         </div>
 
@@ -226,6 +369,25 @@
     }
     function closeBroadcastModal() {
         document.getElementById('broadcastModal').classList.remove('active');
+    }
+
+    function filterSoftware() {
+        let input = document.getElementById('softwareSearch');
+        let filter = input.value.toLowerCase();
+        let table = document.getElementById('softwareTable');
+        let tr = table.getElementsByTagName('tr');
+
+        for (let i = 1; i < tr.length; i++) {
+            let td = tr[i].getElementsByTagName('td')[0];
+            if (td) {
+                let txtValue = td.textContent || td.innerText;
+                if (txtValue.toLowerCase().indexOf(filter) > -1) {
+                    tr[i].style.display = "";
+                } else {
+                    tr[i].style.display = "none";
+                }
+            }
+        }
     }
 </script>
 @endsection
