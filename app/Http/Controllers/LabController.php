@@ -93,7 +93,7 @@ class LabController extends Controller
     public function sendCommand(Request $request, Lab $lab): RedirectResponse
     {
         $validated = $request->validate([
-            'tipe' => ['required', 'in:shutdown,restart,broadcast'],
+            'tipe' => ['required', 'in:shutdown,restart,broadcast,lock'],
             'grace_seconds' => ['nullable', 'integer', 'min:0', 'max:600'],
             'message' => ['nullable', 'string', 'max:255'],
         ]);
