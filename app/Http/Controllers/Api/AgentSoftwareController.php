@@ -43,12 +43,14 @@ class AgentSoftwareController extends Controller
             if (!$existing->has($name)) {
                 // Newly installed software detected!
                 $newCount++;
-                SoftwareEvent::create([
+                $event = SoftwareEvent::create([
                     'computer_id' => $computer->id,
                     'software_name' => $name,
                     'tipe' => 'installed',
                     'detected_at' => $now,
                 ]);
+
+                \App\Services\TelegramService::notifySoftwareEvent($event);
 
                 AuditLog::create([
                     'user_id' => null,

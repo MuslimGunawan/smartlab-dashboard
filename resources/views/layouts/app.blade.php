@@ -541,14 +541,40 @@
             </a>
 
             <div class="nav-label">Monitoring & Log</div>
-            <a href="{{ route('violations.index') }}" class="nav-item {{ request()->routeIs('violations*') ? 'active' : '' }}">
+            <a href="{{ route('issues.index') }}" class="nav-item {{ request()->routeIs('issues*') ? 'active' : '' }}">
                 <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                <span>Kendala Meja / PC</span>
+                @php $pendingCount = \App\Models\IssueReport::where('status', 'pending')->count(); @endphp
+                @if($pendingCount > 0)
+                    <span style="margin-left: auto; background: #ef4444; color: #fff; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 9999px;">{{ $pendingCount }}</span>
+                @endif
+            </a>
+            <a href="{{ route('violations.index') }}" class="nav-item {{ request()->routeIs('violations*') ? 'active' : '' }}">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
                 <span>Insiden Pelanggaran</span>
+            </a>
+            <a href="{{ route('reports.monthly') }}" class="nav-item {{ request()->routeIs('reports*') ? 'active' : '' }}">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                <span>Laporan Bulanan</span>
             </a>
             <a href="{{ route('audit-logs.index') }}" class="nav-item {{ request()->routeIs('audit-logs*') ? 'active' : '' }}">
                 <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
                 <span>Riwayat & Audit Log</span>
             </a>
+
+            @if(auth()->user()->isSenior())
+                <div class="nav-label">Administrasi</div>
+                @if(auth()->user()->isSuperAdmin())
+                    <a href="{{ route('users.index') }}" class="nav-item {{ request()->routeIs('users*') ? 'active' : '' }}">
+                        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                        <span>Kelola Pengguna</span>
+                    </a>
+                @endif
+                <a href="{{ route('settings.index') }}" class="nav-item {{ request()->routeIs('settings*') ? 'active' : '' }}">
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    <span>Pengaturan & Alert</span>
+                </a>
+            @endif
         </nav>
 
         <div class="sidebar-footer">
@@ -556,7 +582,7 @@
                 <div class="user-avatar">{{ substr(auth()->user()->name ?? 'U', 0, 1) }}</div>
                 <div class="user-info">
                     <div class="user-name">{{ auth()->user()->name ?? 'ASLAB User' }}</div>
-                    <div class="user-role">{{ str_replace('_', ' ', auth()->user()->role ?? 'ASLAB') }}</div>
+                    <div class="user-role">{{ auth()->user()->role_badge ?? 'ASLAB' }}</div>
                 </div>
                 <form action="{{ route('logout') }}" method="POST" style="margin: 0;">
                     @csrf

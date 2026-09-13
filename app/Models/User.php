@@ -53,8 +53,48 @@ class User extends Authenticatable
         return $this->role === 'super_admin';
     }
 
+    public function isSenior(): bool
+    {
+        return in_array($this->role, ['super_admin', 'aslab_senior', 'aslab']);
+    }
+
+    public function isJunior(): bool
+    {
+        return $this->role === 'aslab_junior';
+    }
+
     public function isAslab(): bool
     {
-        return $this->role === 'aslab' || $this->role === 'super_admin';
+        return in_array($this->role, ['super_admin', 'aslab_senior', 'aslab_junior', 'aslab']);
+    }
+
+    public function canManageUsers(): bool
+    {
+        return $this->isSuperAdmin();
+    }
+
+    public function canDeleteResources(): bool
+    {
+        return $this->isSenior();
+    }
+
+    public function canManageBlocklist(): bool
+    {
+        return $this->isSenior();
+    }
+
+    public function canManageKiosk(): bool
+    {
+        return $this->isSenior();
+    }
+
+    public function getRoleBadgeAttribute(): string
+    {
+        return match ($this->role) {
+            'super_admin' => 'Super Admin (Kalab)',
+            'aslab_senior' => 'ASLAB Senior',
+            'aslab_junior' => 'ASLAB Junior',
+            default => 'ASLAB',
+        };
     }
 }

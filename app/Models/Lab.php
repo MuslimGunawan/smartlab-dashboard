@@ -41,4 +41,9 @@ class Lab extends Model
     {
         return $this->hasMany(Command::class);
     }
+
+    public function issueReports(): HasMany
+    {
+        return $this->hasMany(IssueReport::class);
+    }
 }

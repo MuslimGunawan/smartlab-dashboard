@@ -74,6 +74,11 @@ class Computer extends Model
         return $this->hasMany(SoftwareEvent::class);
     }
 
+    public function issueReports(): HasMany
+    {
+        return $this->hasMany(IssueReport::class);
+    }
+
     public function isOnline(): bool
     {
         if ($this->status !== 'online' || !$this->last_seen_at) {

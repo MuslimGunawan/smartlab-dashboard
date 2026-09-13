@@ -51,6 +51,8 @@ class AgentViolationController extends Controller
             'resolved' => false,
         ]);
 
+        \App\Services\TelegramService::notifyViolation($violation);
+
         AuditLog::create([
             'user_id' => null,
             'aksi' => 'violation_detected',

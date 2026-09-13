@@ -307,6 +307,26 @@
                 </form>
             </div>
 
+            <!-- QR Code & Label Meja (Fase 4 - PRD #22) -->
+            <div class="card" style="margin-bottom: 24px; text-align: center;">
+                <h4 style="font-size: 14px; font-weight: 800; color: var(--gray-900); margin-bottom: 6px;">QR Code & Label Meja</h4>
+                <p style="font-size: 11.5px; color: var(--gray-500); margin-bottom: 12px;">Scan untuk lapor kendala/kerusakan perangkat</p>
+                
+                <div style="background: #ffffff; padding: 12px; border: 1px solid var(--gray-200); border-radius: 12px; display: inline-block; box-shadow: var(--shadow-sm); margin-bottom: 12px;">
+                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data={{ urlencode(route('report-issue.create', $computer->device_token)) }}" alt="QR Meja {{ $computer->nama_pc }}" style="width: 140px; height: 140px; display: block;">
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <button onclick="openBadgeModal()" class="btn btn-primary btn-sm" style="width: 100%; font-size: 12.5px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                        <svg style="width:16px;height:16px;" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+                        <span>Cetak Label Stiker Meja</span>
+                    </button>
+                    <a href="{{ route('report-issue.create', $computer->device_token) }}" target="_blank" class="btn btn-secondary btn-sm" style="width: 100%; font-size: 12px;">
+                        ↗ Buka Form Publik
+                    </a>
+                </div>
+            </div>
+
             <!-- Device Token Card -->
             <div class="card" style="margin-bottom: 24px; background: var(--gray-50);">
                 <h4 style="font-size: 13px; font-weight: 800; color: var(--gray-700); margin-bottom: 8px;">Device Token</h4>
@@ -316,18 +336,20 @@
                 </code>
             </div>
 
-            <!-- Delete Danger Zone -->
-            <div class="card" style="border-color: #fecaca; background: #fffbfb;">
-                <h4 style="font-size: 13px; font-weight: 800; color: #b91c1c; margin-bottom: 6px;">Zona Bahaya</h4>
-                <p style="font-size: 11.5px; color: var(--gray-600); margin-bottom: 12px;">
-                    Menghapus komputer akan mencabut akses token. PC harus dipasangkan ulang lewat kode pairing baru.
-                </p>
-                <form action="{{ route('computers.destroy', $computer) }}" method="POST" onsubmit="return confirm('PERINGATAN: Apakah Anda yakin ingin menghapus PC {{ $computer->nama_pc }}?');">
-                    @csrf
-                    @method('DELETE')
-                    <button type="submit" class="btn btn-danger btn-sm" style="width: 100%;">Hapus Komputer Ini</button>
-                </form>
-            </div>
+            <!-- Delete Danger Zone (Restricted to Senior/Super Admin) -->
+            @if(auth()->user()->canDeleteResources())
+                <div class="card" style="border-color: #fecaca; background: #fffbfb;">
+                    <h4 style="font-size: 13px; font-weight: 800; color: #b91c1c; margin-bottom: 6px;">Zona Bahaya</h4>
+                    <p style="font-size: 11.5px; color: var(--gray-600); margin-bottom: 12px;">
+                        Menghapus komputer akan mencabut akses token. PC harus dipasangkan ulang lewat kode pairing baru.
+                    </p>
+                    <form action="{{ route('computers.destroy', $computer) }}" method="POST" onsubmit="return confirm('PERINGATAN: Apakah Anda yakin ingin menghapus PC {{ $computer->nama_pc }}?');">
+                        @csrf
+                        @method('DELETE')
+                        <button type="submit" class="btn btn-danger btn-sm" style="width: 100%;">Hapus Komputer Ini</button>
+                    </form>
+                </div>
+            @endif
         </div>
     </div>
 @endsection
@@ -363,7 +385,74 @@
     </div>
 </div>
 
+<!-- Printable Desk Badge Modal (Fase 4 - PRD #22) -->
+<div id="badgeModal" class="modal-backdrop">
+    <div class="modal-box" style="max-width: 420px; text-align: center;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h3 style="font-size: 16px; font-weight: 800; color: var(--gray-900); margin: 0;">Preview Label Stiker Meja</h3>
+            <button onclick="closeBadgeModal()" style="background:none; border:none; font-size:20px; cursor:pointer; color:var(--gray-400);">&times;</button>
+        </div>
+
+        <!-- Printable Badge Area -->
+        <div id="printableDeskBadge" style="border: 2px solid var(--unimal-green); border-radius: 12px; padding: 18px 16px; background: #ffffff; margin-bottom: 20px;">
+            <div style="font-size: 11px; font-weight: 800; color: var(--unimal-green-dark); letter-spacing: 0.5px; text-transform: uppercase;">
+                LABORATORIUM TEKNIK INFORMATIKA UNIMAL
+            </div>
+            <div style="font-size: 18px; font-weight: 800; color: #0f172a; margin: 4px 0 2px;">
+                {{ $computer->nama_pc }}
+            </div>
+            <div style="font-size: 12px; font-weight: 600; color: var(--unimal-gold); margin-bottom: 12px;">
+                {{ $computer->lab ? $computer->lab->nama_lab : 'Ruang Lab' }}
+            </div>
+
+            <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px dashed var(--gray-300); display: inline-block; margin-bottom: 10px;">
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={{ urlencode(route('report-issue.create', $computer->device_token)) }}" alt="QR Code" style="width: 130px; height: 130px; display: block;">
+            </div>
+
+            <div style="font-size: 11.5px; font-weight: 700; color: #1e293b;">
+                Pindai QR ini dengan kamera HP
+            </div>
+            <div style="font-size: 10.5px; color: #64748b; margin-top: 2px;">
+                Untuk melapor kendala mouse, keyboard, monitor, atau PC ke ASLAB
+            </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+            <button type="button" onclick="closeBadgeModal()" class="btn btn-secondary">Tutup</button>
+            <button type="button" onclick="printBadge()" class="btn btn-primary" style="display: flex; align-items: center; gap: 6px;">
+                <svg style="width:16px;height:16px;" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+                <span>Cetak Stiker Meja</span>
+            </button>
+        </div>
+    </div>
+</div>
+
 <script>
+    function openBadgeModal() {
+        document.getElementById('badgeModal').classList.add('active');
+    }
+    function closeBadgeModal() {
+        document.getElementById('badgeModal').classList.remove('active');
+    }
+
+    function printBadge() {
+        const printContent = document.getElementById('printableDeskBadge').innerHTML;
+        const printWindow = window.open('', '_blank', 'width=500,height=600');
+        printWindow.document.write('<html><head><title>Cetak Label Meja - {{ $computer->nama_pc }}</title>');
+        printWindow.document.write('<style>');
+        printWindow.document.write('body { font-family: system-ui, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }');
+        printWindow.document.write('.badge-container { border: 2px solid #009344; border-radius: 12px; padding: 24px; text-align: center; width: 320px; }');
+        printWindow.document.write('</style></head><body>');
+        printWindow.document.write('<div class="badge-container">' + printContent + '</div>');
+        printWindow.document.write('</body></html>');
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => {
+            printWindow.print();
+            printWindow.close();
+        }, 300);
+    }
+
     function openBroadcastModal() {
         document.getElementById('broadcastModal').classList.add('active');
     }
