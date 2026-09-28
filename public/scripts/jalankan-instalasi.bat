@@ -61,17 +61,36 @@ if not exist "%PS_SCRIPT%" (
 )
 
 if not exist "%PS_SCRIPT%" (
+    echo   [INFO] Script belum ada di folder lokal. Mencoba mengunduh langsung dari Cloud SmartLab...
+    if not exist "%~dp0Apps" mkdir "%~dp0Apps" >nul 2>&1
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+        "$urls = @('https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/install-lab-software.ps1', 'http://smartlab.is-best.net/scripts/install-lab-software.ps1');" ^
+        "[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12;" ^
+        "foreach ($u in $urls) {" ^
+        "    try {" ^
+        "        (New-Object System.Net.WebClient).DownloadFile($u, '%~dp0Apps\install-lab-software.ps1');" ^
+        "        if (Test-Path '%~dp0Apps\install-lab-software.ps1') { exit 0 }" ^
+        "    } catch {}" ^
+        "}"
+    if exist "%~dp0Apps\install-lab-software.ps1" (
+        set "PS_SCRIPT=%~dp0Apps\install-lab-software.ps1"
+        echo   [OK] Script berhasil diunduh secara mandiri dari Cloud!
+    )
+)
+
+if not exist "%PS_SCRIPT%" (
     echo.
     echo ============================================================
     echo [ERROR] FILE SCRIPT TIDAK DITEMUKAN
     echo ============================================================
     echo.
-    echo Script instalasi tidak ditemukan pada:
+    echo Script instalasi tidak ditemukan secara offline maupun online.
+    echo Lokasi yang dicari:
     echo   %~dp0Apps\install-lab-software.ps1
     echo atau:
     echo   %~dp0install-lab-software.ps1
     echo.
-    echo Pastikan folder Apps beserta file install-lab-software.ps1 tersedia.
+    echo Pastikan komputer terhubung ke internet atau copy folder Apps dari flashdisk.
     echo.
     pause
     exit /b 1

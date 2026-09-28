@@ -471,10 +471,16 @@ function Setup-XamppStack {
         $pmaConfig = Join-Path $xamppDir "phpMyAdmin\config.inc.php"
         if (Test-Path $pmaConfig) {
             $pmaText = [System.IO.File]::ReadAllText($pmaConfig)
-            if ($pmaText -notmatch "\['port'\]\s*=\s*'3307'") {
-                $pmaText = $pmaText -replace "(?m)(\\\$cfg\['Servers'\]\[\\\$i\]\['host'\]\s*=.*?;)", "`$1`r`n`$cfg['Servers'][`$i]['port'] = '3307';"
-                [System.IO.File]::WriteAllText($pmaConfig, $pmaText)
+            if ($pmaText -notmatch "['`"]port['`"]\s*=") {
+                $portLine = "`r`n`$cfg['Servers'][`$i]['port'] = '3307';`r`n"
+                [System.IO.File]::AppendAllText($pmaConfig, $portLine)
                 Write-Host "   [OK] phpMyAdmin XAMPP dikonfigurasi ke MySQL Port 3307" -ForegroundColor Green
+            } else {
+                $newPmaText = [System.Text.RegularExpressions.Regex]::Replace($pmaText, "(\['port'\]\s*=\s*['`"])[^'`"]*(['`"])", '${1}3307${2}')
+                if ($pmaText -ne $newPmaText) {
+                    [System.IO.File]::WriteAllText($pmaConfig, $newPmaText)
+                    Write-Host "   [OK] phpMyAdmin XAMPP diperbarui ke MySQL Port 3307" -ForegroundColor Green
+                }
             }
         }
 
@@ -572,14 +578,22 @@ function Setup-ComposerAndLaravel {
     foreach ($iniFile in $allPhpInis) {
         try {
             $iniContent = [System.IO.File]::ReadAllText($iniFile.FullName)
-            $newIni = $iniContent -replace '(?m)^;extension=zip\b', 'extension=zip'
-            $newIni = $newIni -replace '(?m)^;extension=fileinfo\b', 'extension=fileinfo'
-            $newIni = $newIni -replace '(?m)^;extension=curl\b', 'extension=curl'
-            $newIni = $newIni -replace '(?m)^;extension=openssl\b', 'extension=openssl'
-            $newIni = $newIni -replace '(?m)^;extension=pdo_mysql\b', 'extension=pdo_mysql'
+            $newIni = $iniContent -replace '(?m)^;\s*extension\s*=\s*zip\b', 'extension=zip'
+            $newIni = $newIni -replace '(?m)^;\s*extension\s*=\s*fileinfo\b', 'extension=fileinfo'
+            $newIni = $newIni -replace '(?m)^;\s*extension\s*=\s*curl\b', 'extension=curl'
+            $newIni = $newIni -replace '(?m)^;\s*extension\s*=\s*openssl\b', 'extension=openssl'
+            $newIni = $newIni -replace '(?m)^;\s*extension\s*=\s*pdo_mysql\b', 'extension=pdo_mysql'
+            $newIni = $newIni -replace '(?m)^;\s*extension\s*=\s*mbstring\b', 'extension=mbstring'
+            
+            # Jika belum ada sama sekali, tambahkan di baris baru
+            if ($newIni -notmatch '(?m)^extension\s*=\s*zip\b') { $newIni += "`r`nextension=zip`r`n" }
+            if ($newIni -notmatch '(?m)^extension\s*=\s*fileinfo\b') { $newIni += "`r`nextension=fileinfo`r`n" }
+            if ($newIni -notmatch '(?m)^extension\s*=\s*curl\b') { $newIni += "`r`nextension=curl`r`n" }
+            if ($newIni -notmatch '(?m)^extension\s*=\s*openssl\b') { $newIni += "`r`nextension=openssl`r`n" }
+
             if ($iniContent -ne $newIni) {
                 [System.IO.File]::WriteAllText($iniFile.FullName, $newIni)
-                Write-Host "   [OK] Ekstensi zip & curl berhasil diaktifkan di $($iniFile.FullName)" -ForegroundColor Green
+                Write-Host "   [OK] Ekstensi zip, fileinfo, curl & openssl aktif di $($iniFile.FullName)" -ForegroundColor Green
             }
         } catch {}
     }
@@ -787,14 +801,14 @@ while ($running) {
     switch ($choice) {
         "1" {
             Run-FullInstallation
-            Write-Host "`n[Tekan sembarang tombol untuk kembali ke Menu Utama...]" -ForegroundColor Cyan
-            $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+            Write-Host "`n[Tekan Enter atau sembarang tombol untuk kembali ke Menu Utama...]" -ForegroundColor Cyan
+            try { $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") } catch { Read-Host }
         }
         "2" {
             Clear-Host
             Test-LabSoftwareStatus
-            Write-Host "`n[Tekan sembarang tombol untuk kembali ke Menu Utama...]" -ForegroundColor Cyan
-            $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+            Write-Host "`n[Tekan Enter atau sembarang tombol untuk kembali ke Menu Utama...]" -ForegroundColor Cyan
+            try { $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") } catch { Read-Host }
         }
         "3" {
             Write-Host "`nKeluar dari skrip otomasi. Terima kasih." -ForegroundColor Gray
