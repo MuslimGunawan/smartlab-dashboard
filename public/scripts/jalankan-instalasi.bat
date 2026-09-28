@@ -1,175 +1,77 @@
 @echo off
-setlocal EnableExtensions EnableDelayedExpansion
+setlocal EnableExtensions
 title Installer Otomatis Software Lab TI - UNIMAL
 color 0A
 
-:: ============================================================
-:: 1. Pastikan berjalan sebagai Administrator (UAC Elevation)
-:: ============================================================
-net session >nul 2>&1
-if not "%errorlevel%"=="0" (
-    echo.
-    echo ============================================================
-    echo   MEMINTA HAK AKSES ADMINISTRATOR
-    echo ============================================================
-    echo.
-    echo Silakan klik [YES] pada jendela konfirmasi User Account Control (UAC)...
-    echo.
-
-    powershell.exe -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
-
-    if errorlevel 1 (
-        echo.
-        echo [ERROR] Gagal meminta hak akses Administrator atau dibatalkan oleh pengguna.
-        echo Klik kanan pada file ini lalu pilih 'Run as administrator'.
-        echo.
-        pause
-    )
-    exit /b
-)
-
-:: ============================================================
-:: 2. Pindah ke direktori tempat file BAT ini berada
-:: ============================================================
+:: 1. Pindah ke direktori tempat file BAT ini berada
 cd /d "%~dp0"
 
+:: 2. Cek apakah sudah berjalan sebagai Administrator
+net session >nul 2>&1
+if "%errorlevel%"=="0" goto :run_admin
+
+echo.
+echo ============================================================
+echo   MEMINTA HAK AKSES ADMINISTRATOR
+echo ============================================================
+echo.
+echo Membuka permintaan izin Administrator (UAC)...
+echo Silakan klik [YES] pada jendela konfirmasi yang muncul.
+echo.
+
+:: Buat script VBS temporary untuk elevasi yang 100% kompatibel di semua versi Windows
+set "VBS_TEMP=%TEMP%\smartlab_uac_%RANDOM%.vbs"
+echo Set UAC = CreateObject^("Shell.Application"^) > "%VBS_TEMP%"
+echo UAC.ShellExecute "cmd.exe", "/k cd /d ""%~dp0"" ^&^& ""%~f0"" admin", "", "runas", 1 >> "%VBS_TEMP%"
+cscript //nologo "%VBS_TEMP%" >nul 2>&1
+del /f /q "%VBS_TEMP%" >nul 2>&1
+
+:: Tunggu sejenak lalu tutup jendela non-admin ini
+timeout /t 2 >nul 2>&1
+exit /b
+
+:run_admin
+cls
 echo.
 echo ============================================================
 echo   INSTALLER OTOMASI STANDARISASI SOFTWARE LAB TI - UNIMAL
 echo ============================================================
 echo.
-echo Lokasi Kerja: %CD%
+echo Folder kerja: %CD%
 echo.
 
-:: ============================================================
-:: 3. Amankan Folder dari Windows Defender (Cegah False Alarm)
-:: ============================================================
-echo [1/3] Menyiapkan keamanan sistem (Mencegah False Alarm Antivirus)...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Add-MpPreference -ExclusionPath '%~dp0' -ErrorAction SilentlyContinue; Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue" >nul 2>&1
-echo   [OK] Folder kerja aman dari pemblokiran & karantina Windows Defender.
-echo.
+set "TARGET_PS=%~dp0Apps\install-lab-software.ps1"
+if not exist "%TARGET_PS%" set "TARGET_PS=%~dp0install-lab-software.ps1"
 
-:: ============================================================
-:: 4. Cari Script PowerShell Otomasi
-:: ============================================================
-echo [2/3] Mendeteksi file script instalasi...
-
-set "PS_SCRIPT=%~dp0Apps\install-lab-software.ps1"
-
-if not exist "%PS_SCRIPT%" (
-    set "PS_SCRIPT=%~dp0install-lab-software.ps1"
-)
-
-if not exist "%PS_SCRIPT%" (
-    echo   [INFO] Script belum ada di folder lokal. Mencoba mengunduh langsung dari Cloud SmartLab...
+if not exist "%TARGET_PS%" (
+    echo [i] Script lokal tidak ditemukan, mencoba mengunduh dari Cloud SmartLab...
     if not exist "%~dp0Apps" mkdir "%~dp0Apps" >nul 2>&1
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
-        "$urls = @('https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/install-lab-software.ps1', 'http://smartlab.is-best.net/scripts/install-lab-software.ps1');" ^
-        "[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12;" ^
-        "foreach ($u in $urls) {" ^
-        "    try {" ^
-        "        (New-Object System.Net.WebClient).DownloadFile($u, '%~dp0Apps\install-lab-software.ps1');" ^
-        "        if (Test-Path '%~dp0Apps\install-lab-software.ps1') { exit 0 }" ^
-        "    } catch {}" ^
-        "}"
-    if exist "%~dp0Apps\install-lab-software.ps1" (
-        set "PS_SCRIPT=%~dp0Apps\install-lab-software.ps1"
-        echo   [OK] Script berhasil diunduh secara mandiri dari Cloud!
-    )
+    set "TARGET_PS=%~dp0Apps\install-lab-software.ps1"
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12; try { (New-Object System.Net.WebClient).DownloadFile('https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/install-lab-software.ps1', '%~dp0Apps\install-lab-software.ps1') } catch {}"
 )
 
-if not exist "%PS_SCRIPT%" (
+if not exist "%TARGET_PS%" (
     echo.
     echo ============================================================
     echo [ERROR] FILE SCRIPT TIDAK DITEMUKAN
     echo ============================================================
     echo.
-    echo Script instalasi tidak ditemukan secara offline maupun online.
-    echo Lokasi yang dicari:
+    echo Script instalasi tidak ditemukan pada:
     echo   %~dp0Apps\install-lab-software.ps1
-    echo atau:
-    echo   %~dp0install-lab-software.ps1
     echo.
-    echo Pastikan komputer terhubung ke internet atau copy folder Apps dari flashdisk.
+    echo Pastikan folder Apps tersedia atau komputer terhubung ke internet.
     echo.
     pause
     exit /b 1
 )
 
-echo   [OK] File lokal ditemukan: %PS_SCRIPT%
+echo [OK] Menjalankan installer: %TARGET_PS%
 echo.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%TARGET_PS%"
 
-:: ============================================================
-:: 5. Fitur Auto-Update Script dari Cloud SmartLab (Opsional)
-::    (Tidak menggagalkan proses jika offline / tidak ada internet)
-:: ============================================================
-echo   [SYNC] Memeriksa pembaruan skrip dari Cloud SmartLab...
-set "REMOTE_SCRIPT=%TEMP%\install-lab-software-latest.ps1"
-
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$urls = @('https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/install-lab-software.ps1', 'http://smartlab.is-best.net/scripts/install-lab-software.ps1');" ^
-    "$target = '%PS_SCRIPT%';" ^
-    "$tempFile = '%REMOTE_SCRIPT%';" ^
-    "$updated = $false;" ^
-    "[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12;" ^
-    "foreach ($url in $urls) {" ^
-    "    try {" ^
-    "        $req = [System.Net.HttpWebRequest]::Create($url);" ^
-    "        $req.Timeout = 4000;" ^
-    "        $req.UserAgent = 'SmartLab-Client/2.5';" ^
-    "        $resp = $req.GetResponse();" ^
-    "        if ($resp.StatusCode -eq 200) {" ^
-    "            $stream = $resp.GetResponseStream();" ^
-    "            $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::UTF8);" ^
-    "            $content = $reader.ReadToEnd();" ^
-    "            $reader.Close(); $resp.Close();" ^
-    "            if ($content.Length -gt 5000 -and $content -match 'Run-FullInstallation') {" ^
-    "                [System.IO.File]::WriteAllText($target, $content, [System.Text.Encoding]::UTF8);" ^
-    "                Write-Host '  [OK] Script berhasil diperbarui ke versi terbaru dari Cloud Lab!' -ForegroundColor Green;" ^
-    "                $updated = $true; break;" ^
-    "            }" ^
-    "        }" ^
-    "    } catch {}" ^
-    "}" ^
-    "if (-not $updated) {" ^
-    "    Write-Host '  [i] Menggunakan script lokal di flashdisk (Mode Offline / Siap Pakai).' -ForegroundColor Yellow;" ^
-    "}"
-
-if exist "%REMOTE_SCRIPT%" del /q "%REMOTE_SCRIPT%" >nul 2>&1
-echo.
-
-:: ============================================================
-:: 6. Jalankan Installer PowerShell
-:: ============================================================
-echo [3/3] Menjalankan installer PowerShell...
-echo ============================================================
-echo.
-
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%"
-
-set "PS_EXIT=%errorlevel%"
-
-:: ============================================================
-:: 7. Kembalikan Pengaturan Keamanan Sistem & Tampilkan Ringkasan
-:: ============================================================
 echo.
 echo ============================================================
 echo   SESI INSTALASI SELESAI
 echo ============================================================
 echo.
-echo Mengaktifkan kembali proteksi Real-Time Windows Defender...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Set-MpPreference -DisableRealtimeMonitoring $false -ErrorAction SilentlyContinue" >nul 2>&1
-echo [OK] Proteksi keamanan PC kembali aktif.
-echo.
-
-if "%PS_EXIT%"=="0" (
-    echo [OK] Script instalasi selesai dijalankan tanpa error.
-) else (
-    echo [PERINGATAN] Script berhenti dengan kode: %PS_EXIT%
-    echo Silakan periksa pesan log di atas jika ada software yang membutuhkan perhatian.
-)
-
-echo.
-echo Tekan sembarang tombol untuk keluar...
-pause >nul
-exit /b %PS_EXIT%
+pause

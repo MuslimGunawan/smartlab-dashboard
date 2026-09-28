@@ -36,8 +36,17 @@ function Test-Administrator {
 
 if (-not (Test-Administrator)) {
     Write-Host "`n[!] Membutuhkan hak akses Administrator. Membuka jendela Administrator..." -ForegroundColor Yellow
-    Start-Process powershell.exe -ArgumentList ("-NoProfile -ExecutionPolicy Bypass -File `"{0}`"" -f $PSCommandPath) -Verb RunAs
-    exit
+    try {
+        $spPath = $PSCommandPath
+        if (-not $spPath) { $spPath = $MyInvocation.MyCommand.Path }
+        Start-Process powershell.exe -ArgumentList ("-NoProfile -ExecutionPolicy Bypass -File `"{0}`"" -f $spPath) -Verb RunAs -ErrorAction Stop
+        exit
+    } catch {
+        Write-Host "[!] Gagal membuka jendela Administrator otomatis: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "    Silakan klik kanan 'jalankan-instalasi.bat' lalu pilih 'Run as administrator'." -ForegroundColor Cyan
+        Read-Host "`nTekan Enter untuk keluar..."
+        exit 1
+    }
 }
 
 # 2. Deteksi Lokasi Folder Installer Offline (Apps/)
