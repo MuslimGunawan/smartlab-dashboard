@@ -41,19 +41,43 @@ if (-not (Test-Administrator)) {
 }
 
 # 2. Deteksi Lokasi Folder Installer Offline (Apps/)
-# Cerdas: Mendeteksi apakah script berada di dalam folder Apps, atau di samping folder Apps
-$leafFolder = Split-Path -Leaf $PSScriptRoot
-if ($leafFolder -ieq "Apps") {
-    $AppsDir = $PSScriptRoot
-} elseif (Test-Path (Join-Path $PSScriptRoot "Apps")) {
-    $AppsDir = Join-Path $PSScriptRoot "Apps"
-} else {
-    $currentWorkingDir = (Get-Location).Path
-    $testDir = Join-Path $currentWorkingDir "Apps"
-    if (Test-Path $testDir) {
-        $AppsDir = $testDir
-    } else {
+# Cerdas: Mendeteksi apakah script berada di dalam folder Apps, di samping folder Apps, atau di USB/Drive lain
+$candidateDirs = @(
+    $PSScriptRoot,
+    (Join-Path $PSScriptRoot "Apps"),
+    (Split-Path -Parent $PSScriptRoot),
+    (Join-Path (Split-Path -Parent $PSScriptRoot) "Apps"),
+    (Get-Location).Path,
+    (Join-Path (Get-Location).Path "Apps")
+)
+
+# Tambahkan pencarian drive lain (misal flashdisk E:\Apps, D:\Apps, F:\Apps, dsb.)
+$driveLetters = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.DriveType -match 'Removable|Fixed' -and $_.IsReady } | Select-Object -ExpandProperty RootDirectory
+foreach ($d in $driveLetters) {
+    $candidateDirs += (Join-Path $d.FullName "Lab_Software\Apps")
+    $candidateDirs += (Join-Path $d.FullName "Apps")
+}
+
+$AppsDir = $null
+foreach ($cand in $candidateDirs) {
+    if (-not [string]::IsNullOrWhiteSpace($cand) -and (Test-Path $cand)) {
+        # Valid jika mengandung file installer atau folder Laragon_Custom_Stack
+        $hasInstallers = Get-ChildItem -Path $cand -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -match "exe|msi|bat" } | Select-Object -First 1
+        $hasCustomStack = Test-Path (Join-Path $cand "Laragon_Custom_Stack")
+        if ($hasInstallers -or $hasCustomStack) {
+            $AppsDir = (Get-Item $cand).FullName
+            break
+        }
+    }
+}
+
+if (-not $AppsDir) {
+    if (Test-Path (Join-Path $PSScriptRoot "Apps")) {
+        $AppsDir = (Join-Path $PSScriptRoot "Apps")
+    } elseif ((Split-Path -Leaf $PSScriptRoot) -ieq "Apps") {
         $AppsDir = $PSScriptRoot
+    } else {
+        $AppsDir = (Join-Path $PSScriptRoot "Apps")
     }
 }
 
@@ -152,11 +176,13 @@ function Install-AppSmart {
                     $proc = Start-Process -FilePath $offlineFile.FullName -ArgumentList $SilentArgs -Wait -PassThru
                 }
 
-                if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
+                # Kode 0 = Sukses, 3010 = Sukses (Butuh restart), 1223 = Elevated/UAC Success (Nullsoft / NSIS)
+                if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010 -or $proc.ExitCode -eq 1223) {
                     Write-Host "[OK] Berhasil menginstal $Name dari folder Apps!" -ForegroundColor Green
                     return
                 } else {
                     Write-Host "[!] Installer offline selesai dengan kode exit: $($proc.ExitCode)" -ForegroundColor Yellow
+                    return
                 }
             }
         }
@@ -404,7 +430,7 @@ function Setup-XamppStack {
         if (Test-Path $pmaConfig) {
             $pmaText = [System.IO.File]::ReadAllText($pmaConfig)
             if ($pmaText -notmatch "\['port'\]\s*=\s*'3307'") {
-                $pmaText = $pmaText -replace "(\\\$cfg\['Servers'\]\\[\\\$i\\]\['host'\]\s*=.*?;)", "`$1`r`n`$cfg['Servers'][`$i]['port'] = '3307';"
+                $pmaText = $pmaText -replace "(?m)(\\\$cfg\['Servers'\]\[\\\$i\]\['host'\]\s*=.*?;)", "`$1`r`n`$cfg['Servers'][`$i]['port'] = '3307';"
                 [System.IO.File]::WriteAllText($pmaConfig, $pmaText)
                 Write-Host "   [OK] phpMyAdmin XAMPP dikonfigurasi ke MySQL Port 3307" -ForegroundColor Green
             }
@@ -492,6 +518,35 @@ function Setup-ComposerAndLaravel {
             if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
                 Write-Host "   [OK] Berhasil memasang Composer!" -ForegroundColor Green
             }
+        }
+    }
+
+    # B. Pastikan ekstensi zip, fileinfo, openssl, curl aktif di seluruh php.ini yang terpasang
+    $allPhpInis = @(
+        (Get-ChildItem -Path "C:\laragon\bin\php\*\php.ini" -File -ErrorAction SilentlyContinue),
+        (Get-ChildItem -Path "C:\xampp\php\php.ini" -File -ErrorAction SilentlyContinue)
+    ) | Where-Object { $_ -ne $null }
+
+    foreach ($iniFile in $allPhpInis) {
+        try {
+            $iniContent = [System.IO.File]::ReadAllText($iniFile.FullName)
+            $newIni = $iniContent -replace '(?m)^;extension=zip\b', 'extension=zip'
+            $newIni = $newIni -replace '(?m)^;extension=fileinfo\b', 'extension=fileinfo'
+            $newIni = $newIni -replace '(?m)^;extension=curl\b', 'extension=curl'
+            $newIni = $newIni -replace '(?m)^;extension=openssl\b', 'extension=openssl'
+            $newIni = $newIni -replace '(?m)^;extension=pdo_mysql\b', 'extension=pdo_mysql'
+            if ($iniContent -ne $newIni) {
+                [System.IO.File]::WriteAllText($iniFile.FullName, $newIni)
+                Write-Host "   [OK] Ekstensi zip & curl berhasil diaktifkan di $($iniFile.FullName)" -ForegroundColor Green
+            }
+        } catch {}
+    }
+
+    # C. Tambahkan Laragon git/usr/bin ke PATH jika ada (sebagai fallback unzip/7z untuk Composer)
+    $laragonGitBins = @("C:\laragon\bin\git\bin", "C:\laragon\bin\git\usr\bin")
+    foreach ($gb in $laragonGitBins) {
+        if (Test-Path $gb) {
+            Add-ToSystemPath -DirToAdd $gb
         }
     }
 
