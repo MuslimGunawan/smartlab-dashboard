@@ -121,11 +121,27 @@ function Set-SystemEnvVar {
     Write-Host "   [ENV] $Name = $Value" -ForegroundColor Green
 }
 
+# 4.1. Helper Parser Argumen CLI (Mencegah bug quoting PowerShell Start-Process)
+function Convert-ArgsToArray([string]$arguments) {
+    if ([string]::IsNullOrWhiteSpace($arguments)) { return @() }
+    $regex = [regex]'(?:[^\s"]+|"[^"]*")+'
+    $matches = $regex.Matches($arguments)
+    $list = @()
+    foreach ($m in $matches) {
+        $val = $m.Value
+        if ($val.StartsWith('"') -and $val.EndsWith('"') -and $val.Length -ge 2) {
+            $val = $val.Substring(1, $val.Length - 2)
+        }
+        $list += $val
+    }
+    return $list
+}
+
 # 5. Fungsi Cerdas Install (Offline Folder Apps -> Fallback Winget Online)
 function Install-AppSmart {
     param (
         [string]$Name,
-        [string]$FilePattern,       # misal "*virtualbox*.exe"
+        [object]$FilePattern,       # misal "*virtualbox*.exe" atau @("*pat1*", "*pat2*")
         [string]$SilentArgs = "",   # misal "/qn" atau "/S"
         [string]$WingetId = "",     # misal "Oracle.VirtualBox"
         [string]$WingetArgs = "",
@@ -150,7 +166,13 @@ function Install-AppSmart {
 
     # A. Cek apakah ada file offline di folder Apps/
     if (Test-Path $AppsDir) {
-        $offlineFile = Get-ChildItem -Path $AppsDir -Filter $FilePattern -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        $offlineFile = $null
+        $patterns = @($FilePattern)
+        foreach ($pat in $patterns) {
+            $offlineFile = Get-ChildItem -Path $AppsDir -Filter $pat -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($offlineFile) { break }
+        }
+
         if ($offlineFile) {
             Write-Host "[OK] Ditemukan file installer offline: $($offlineFile.Name)" -ForegroundColor Green
             
@@ -170,10 +192,15 @@ function Install-AppSmart {
                 Write-Host "[i] Menjalankan instalasi lokal secara otomatis dari flashdisk..." -ForegroundColor Yellow
                 $ext = $offlineFile.Extension.ToLower()
                 if ($ext -eq ".msi") {
-                    $argsToRun = "/i `"$($offlineFile.FullName)`" /qn /norestart"
+                    $argsToRun = @("/i", $offlineFile.FullName, "/qn", "/norestart")
                     $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $argsToRun -Wait -PassThru
                 } else {
-                    $proc = Start-Process -FilePath $offlineFile.FullName -ArgumentList $SilentArgs -Wait -PassThru
+                    $argsList = Convert-ArgsToArray $SilentArgs
+                    if ($argsList.Count -gt 0) {
+                        $proc = Start-Process -FilePath $offlineFile.FullName -ArgumentList $argsList -Wait -PassThru
+                    } else {
+                        $proc = Start-Process -FilePath $offlineFile.FullName -Wait -PassThru
+                    }
                 }
 
                 # Kode 0 = Sukses, 3010 = Sukses (Butuh restart), 1223 = Elevated/UAC Success (Nullsoft / NSIS)
@@ -205,9 +232,14 @@ function Install-AppSmart {
 
             $ext = [System.IO.Path]::GetExtension($destFile).ToLower()
             if ($ext -eq ".msi") {
-                $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/i `"$destFile`" /qn /norestart" -Wait -PassThru
+                $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList @("/i", $destFile, "/qn", "/norestart") -Wait -PassThru
             } else {
-                $proc = Start-Process -FilePath $destFile -ArgumentList $SilentArgs -Wait -PassThru
+                $argsList = Convert-ArgsToArray $SilentArgs
+                if ($argsList.Count -gt 0) {
+                    $proc = Start-Process -FilePath $destFile -ArgumentList $argsList -Wait -PassThru
+                } else {
+                    $proc = Start-Process -FilePath $destFile -Wait -PassThru
+                }
             }
             if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
                 Write-Host "[OK] Berhasil menginstal $Name!" -ForegroundColor Green
@@ -223,16 +255,26 @@ function Install-AppSmart {
         Write-Host "[i] File offline belum ada di folder Apps. Mengunduh & menyimpan installer ke Apps/..." -ForegroundColor Yellow
         try {
             winget download --id "$WingetId" -d "$AppsDir" --accept-package-agreements --accept-source-agreements
-            $newOfflineFile = Get-ChildItem -Path $AppsDir -Filter $FilePattern -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            $patterns = @($FilePattern)
+            $newOfflineFile = $null
+            foreach ($pat in $patterns) {
+                $newOfflineFile = Get-ChildItem -Path $AppsDir -Filter $pat -File -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($newOfflineFile) { break }
+            }
             if ($newOfflineFile) {
                 Write-Host "[OK] Installer berhasil diunduh dan disimpan di Apps/: $($newOfflineFile.Name)" -ForegroundColor Green
                 Write-Host "[i] Melanjutkan instalasi lokal..." -ForegroundColor Yellow
                 $ext = $newOfflineFile.Extension.ToLower()
                 if ($ext -eq ".msi") {
-                    $argsToRun = "/i `"$($newOfflineFile.FullName)`" /qn /norestart"
+                    $argsToRun = @("/i", $newOfflineFile.FullName, "/qn", "/norestart")
                     $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $argsToRun -Wait -PassThru
                 } else {
-                    $proc = Start-Process -FilePath $newOfflineFile.FullName -ArgumentList $SilentArgs -Wait -PassThru
+                    $argsList = Convert-ArgsToArray $SilentArgs
+                    if ($argsList.Count -gt 0) {
+                        $proc = Start-Process -FilePath $newOfflineFile.FullName -ArgumentList $argsList -Wait -PassThru
+                    } else {
+                        $proc = Start-Process -FilePath $newOfflineFile.FullName -Wait -PassThru
+                    }
                 }
                 if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
                     Write-Host "[OK] Berhasil menginstal $Name!" -ForegroundColor Green
@@ -322,7 +364,7 @@ function Setup-LaragonStack {
     # 1. Jalankan Installer Resmi Laragon
     Install-AppSmart -Name "Laragon (Installer Resmi)" `
                      -FilePattern "*Laragon*.exe" `
-                     -SilentArgs "/VERYSILENT /NORESTART" `
+                     -SilentArgs "/VERYSILENT /NORESTART /SP- /SUPPRESSMSGBOXES" `
                      -WingetId "LeNgocKhoa.Laragon" `
                      -CheckPath "C:\laragon\laragon.exe"
 
@@ -510,11 +552,11 @@ function Setup-ComposerAndLaravel {
         if ($composerInstaller) {
             Write-Host "   [OK] Ditemukan installer: $($composerInstaller.Name)" -ForegroundColor Green
             Write-Host "   [i] Menjalankan instalasi Composer secara silent..." -ForegroundColor Yellow
-            $cArgs = "/VERYSILENT /NORESTART"
+            $cArgsList = @("/VERYSILENT", "/NORESTART", "/SP-", "/SUPPRESSMSGBOXES")
             if ($phpPath) {
-                $cArgs += " /PHP=`"$phpPath`""
+                $cArgsList += "/PHP=$phpPath"
             }
-            $proc = Start-Process -FilePath $composerInstaller.FullName -ArgumentList $cArgs -Wait -PassThru
+            $proc = Start-Process -FilePath $composerInstaller.FullName -ArgumentList $cArgsList -Wait -PassThru
             if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
                 Write-Host "   [OK] Berhasil memasang Composer!" -ForegroundColor Green
             }
@@ -691,8 +733,14 @@ function Run-FullInstallation {
     # 8. QGIS Desktop (Otomatis Silent)
     Install-AppSmart -Name "QGIS Desktop" -FilePattern "*QGIS*.msi" -SilentArgs "/qn" -WingetId "OSGeo.QGIS" -CheckPath "C:\Program Files\QGIS *\bin\qgis-bin.exe"
 
-    # 9. Microsoft Visual Studio 2022 Community
-    Install-AppSmart -Name "Microsoft Visual Studio 2022 Community" -FilePattern "*vs_Community*.exe" -SilentArgs "--passive --norestart" -WingetId "Microsoft.VisualStudio.2022.Community" -CheckPath "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe"
+    # 9. Microsoft Visual Studio 2022 Community (Desktop development with C++ Workload)
+    $vsArgs = "--passive --norestart --add Microsoft.VisualStudio.Workload.NativeDesktop --includeRecommended"
+    Install-AppSmart -Name "Microsoft Visual Studio 2022 Community" `
+                     -FilePattern @("*Visual*Studio*Community*.exe", "*vs*Community*.exe", "*Community*.exe") `
+                     -SilentArgs $vsArgs `
+                     -WingetId "Microsoft.VisualStudio.2022.Community" `
+                     -WingetArgs "--override `"$vsArgs`"" `
+                     -CheckPath "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe"
 
     # 10. Arduino IDE (Arduino Uno, Nano, Mega, IoT)
     Install-AppSmart -Name "Arduino IDE" -FilePattern "*arduino*.msi" -SilentArgs "/qn" -WingetId "ArduinoSA.IDE.stable" -CheckPath "C:\Program Files\Arduino IDE\Arduino IDE.exe"
