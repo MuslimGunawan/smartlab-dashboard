@@ -39,25 +39,32 @@ if not exist "%PS_SCRIPT%" (
 )
 
 :: Fitur Auto-Update: Sinkronisasi skrip otomatis dari Cloud SmartLab jika ada internet
-echo   [SYNC] Memeriksa pembaruan skrip otomatis dari smartlab.is-best.net...
+echo   [SYNC] Memeriksa pembaruan skrip otomatis dari Cloud SmartLab...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$url = 'http://smartlab.is-best.net/scripts/install-lab-software.ps1';" ^
+    "$urls = @('https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/install-lab-software.ps1', 'http://smartlab.is-best.net/scripts/install-lab-software.ps1');" ^
     "$target = '%PS_SCRIPT%';" ^
-    "try {" ^
-    "    $req = [System.Net.HttpWebRequest]::Create($url);" ^
-    "    $req.Timeout = 3000;" ^
-    "    $resp = $req.GetResponse();" ^
-    "    if ($resp.StatusCode -eq 200) {" ^
-    "        $stream = $resp.GetResponseStream();" ^
-    "        $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::UTF8);" ^
-    "        $latestContent = $reader.ReadToEnd();" ^
-    "        $reader.Close(); $resp.Close();" ^
-    "        if ($latestContent.Length -gt 1000 -and $latestContent -match 'Run-FullInstallation') {" ^
-    "            [System.IO.File]::WriteAllText($target, $latestContent, [System.Text.Encoding]::UTF8);" ^
-    "            Write-Host '  [OK] Skrip instalasi berhasil disinkronkan ke versi terbaru dari Cloud Lab!' -ForegroundColor Green;" ^
+    "$updated = $false;" ^
+    "[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12;" ^
+    "foreach ($url in $urls) {" ^
+    "    try {" ^
+    "        $req = [System.Net.HttpWebRequest]::Create($url);" ^
+    "        $req.Timeout = 4000;" ^
+    "        $req.UserAgent = 'SmartLab-Client/2.4';" ^
+    "        $resp = $req.GetResponse();" ^
+    "        if ($resp.StatusCode -eq 200) {" ^
+    "            $stream = $resp.GetResponseStream();" ^
+    "            $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::UTF8);" ^
+    "            $latestContent = $reader.ReadToEnd();" ^
+    "            $reader.Close(); $resp.Close();" ^
+    "            if ($latestContent.Length -gt 5000 -and $latestContent -match 'Run-FullInstallation') {" ^
+    "                [System.IO.File]::WriteAllText($target, $latestContent, [System.Text.Encoding]::UTF8);" ^
+    "                Write-Host '  [OK] Skrip instalasi berhasil disinkronkan ke versi terbaru dari Cloud Lab!' -ForegroundColor Green;" ^
+    "                $updated = $true; break;" ^
+    "            }" ^
     "        }" ^
-    "    }" ^
-    "} catch {" ^
+    "    } catch {}" ^
+    "}" ^
+    "if (-not $updated) {" ^
     "    Write-Host '  [i] Menggunakan skrip lokal di flashdisk (Mode Offline / Tanpa Internet).' -ForegroundColor Yellow;" ^
     "}"
 
