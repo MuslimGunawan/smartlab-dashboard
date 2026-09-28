@@ -16,7 +16,7 @@ if %errorLevel% neq 0 (
 cd /d "%~dp0"
 
 echo ==============================================================
-echo   INSTALLER STANDARISASI 14 SOFTWARE LAB TI - UNIMAL
+echo   INSTALLER OTOMASI STANDARISASI SOFTWARE LAB TI - UNIMAL
 echo ==============================================================
 echo.
 

@@ -2,7 +2,7 @@
 # SCRIPT OTOMASI INSTALASI SOFTWARE LABORATORIUM TEKNIK INFORMATIKA
 # UNIVERSITAS MALIKUSSALEH (UNIMAL)
 # ==============================================================================
-# Standarisasi 14 Software Praktikum Resmi Lab TI Unimal:
+# Standarisasi 16 Software Praktikum Resmi Lab TI Unimal:
 #
 # A. APLIKASI BERLISENSI (4):
 #   1. Delphi (Embarcadero Delphi / RAD Studio) -> Mode Interaktif (Pihak Ketiga)
@@ -10,21 +10,23 @@
 #   3. Microsoft Visual Studio 2022 Community
 #   4. Proteus Design Suite (Labcenter Electronics) -> Mode Interaktif (Pihak Ketiga)
 #
-# B. APLIKASI BEBAS LISENSI (10):
+# B. APLIKASI BEBAS LISENSI & DEV STACK (12):
 #   5. Visual Studio Code
 #   6. Android Studio
 #   7. Python 3.12 (with PIP & System PATH)
 #   8. Java JDK 17 LTS (with JAVA_HOME & System PATH)
-#   9. Oracle VM VirtualBox
-#  10. Apache NetBeans IDE
-#  11. QGIS Desktop
-#  12. Arduino IDE (Arduino Uno & IoT)
-#  13. XAMPP
-#  14. Laragon
+#   9. Node.js LTS (with NPM & Global PATH)
+#  10. Composer & Laravel Setup
+#  11. Oracle VM VirtualBox
+#  12. Apache NetBeans IDE
+#  13. QGIS Desktop
+#  14. Arduino IDE (Arduino Uno & IoT)
+#  15. Laragon (WAMP Stack)
+#  16. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$Host.UI.RawUI.WindowTitle = "Installer Otomatis 14 Software Lab TI Unimal"
+$Host.UI.RawUI.WindowTitle = "Installer Otomatis 16 Software Lab TI Unimal"
 
 # 1. Pastikan script berjalan sebagai Administrator
 function Test-Administrator {
