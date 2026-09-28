@@ -146,7 +146,7 @@ function Install-AppSmart {
         [string]$WingetId = "",     # misal "Oracle.VirtualBox"
         [string]$WingetArgs = "",
         [string]$DownloadUrl = "",  # URL unduhan langsung (HTTP/HTTPS) jika ada penambahan aplikasi baru
-        [string]$CheckPath = "",    # Jalur eksekutabel untuk mendeteksi apakah sudah terpasang
+        [object]$CheckPath = $null, # Jalur eksekutabel (string atau array) untuk mendeteksi apakah sudah terpasang
         [switch]$IsInteractive      # Untuk installer pihak ketiga (Delphi/Proteus) agar tidak freeze/hang
     )
 
@@ -155,8 +155,16 @@ function Install-AppSmart {
     Write-Host "========================================================" -ForegroundColor Cyan
 
     # 0. Cek apakah software SUDAH terpasang di sistem ini (Cerdas: Hindari install ulang)
-    if (-not [string]::IsNullOrWhiteSpace($CheckPath)) {
-        $alreadyInstalled = Get-Item $CheckPath -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($CheckPath) {
+        $checkList = @($CheckPath)
+        $alreadyInstalled = $null
+        foreach ($cp in $checkList) {
+            $alreadyInstalled = Get-ChildItem -Path $cp -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $alreadyInstalled) {
+                $alreadyInstalled = Get-Item -Path $cp -ErrorAction SilentlyContinue | Select-Object -First 1
+            }
+            if ($alreadyInstalled) { break }
+        }
         if ($alreadyInstalled) {
             Write-Host "   [OK SUDAH TERPASANG] $Name terdeteksi di $($alreadyInstalled.FullName)" -ForegroundColor Green
             Write-Host "   -> Melewati proses instalasi (Skip)." -ForegroundColor DarkGray
@@ -416,20 +424,30 @@ function Setup-XamppStack {
                      -FilePattern "*xampp*.exe" `
                      -SilentArgs "--mode unattended" `
                      -WingetId "ApacheFriends.Xampp.8.2" `
-                     -CheckPath "C:\xampp\xampp-control.exe"
+                     -CheckPath @("C:\xampp\xampp-control.exe", "D:\xampp\xampp-control.exe")
 
     # 2. Atur Port Otomatis jika C:\xampp terpasang
     $xamppDir = "C:\xampp"
+    if (-not (Test-Path $xamppDir) -and (Test-Path "D:\xampp")) { $xamppDir = "D:\xampp" }
+
     if (Test-Path $xamppDir) {
         Write-Host "`n[i] Mengonfigurasi Port XAMPP agar tidak bentrok dengan Laragon..." -ForegroundColor Yellow
+
+        # 0. Hentikan proses Apache & MySQL XAMPP jika sedang aktif agar melepaskan Port 80, 443, 3306
+        $runningXampp = Get-Process -Name "httpd", "mysqld" -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$xamppDir\*" }
+        if ($runningXampp) {
+            Write-Host "   [!] Menutup proses lama XAMPP agar port 80 & 3306 bebas untuk Laragon..." -ForegroundColor Yellow
+            $runningXampp | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 1
+        }
 
         # A. Konfigurasi Apache Port: Ganti Port 80 -> 8088 di httpd.conf
         # (Port 8000 dipakai Laravel artisan serve, 8080 sering dipakai Tomcat/Spring/Vue, jadi 8088 dijamin 100% aman)
         $httpdConf = Join-Path $xamppDir "apache\conf\httpd.conf"
         if (Test-Path $httpdConf) {
             $confText = [System.IO.File]::ReadAllText($httpdConf)
-            $newConfText = $confText -replace '(?m)^Listen\s+(80|8080)$', 'Listen 8088'
-            $newConfText = $newConfText -replace '(?m)^ServerName\s+localhost:(80|8080)$', 'ServerName localhost:8088'
+            $newConfText = $confText -replace '(?m)^Listen\s+(?:.*:)?(80|8080)\s*$', 'Listen 8088'
+            $newConfText = $newConfText -replace '(?m)^ServerName\s+localhost:(80|8080)\s*$', 'ServerName localhost:8088'
             if ($confText -ne $newConfText) {
                 [System.IO.File]::WriteAllText($httpdConf, $newConfText)
                 Write-Host "   [OK] Apache HTTP Port XAMPP dialihkan ke 8088 (Laragon di 80, Laravel di 8000, WebDev di 3000/5173)" -ForegroundColor Green
@@ -442,9 +460,9 @@ function Setup-XamppStack {
         $httpdSslConf = Join-Path $xamppDir "apache\conf\extra\httpd-ssl.conf"
         if (Test-Path $httpdSslConf) {
             $sslText = [System.IO.File]::ReadAllText($httpdSslConf)
-            $newSslText = $sslText -replace '(?m)^Listen\s+(443|8443)$', 'Listen 8444'
-            $newSslText = $newSslText -replace '(?m)^<VirtualHost _default_:(443|8443)>$', '<VirtualHost _default_:8444>'
-            $newSslText = $newSslText -replace '(?m)^ServerName\s+localhost:(443|8443)$', 'ServerName localhost:8444'
+            $newSslText = $sslText -replace '(?m)^Listen\s+(443|8443)\s*$', 'Listen 8444'
+            $newSslText = $newSslText -replace '(?m)^<VirtualHost _default_:(443|8443)>\s*$', '<VirtualHost _default_:8444>'
+            $newSslText = $newSslText -replace '(?m)^ServerName\s+localhost:(443|8443)\s*$', 'ServerName localhost:8444'
             if ($sslText -ne $newSslText) {
                 [System.IO.File]::WriteAllText($httpdSslConf, $newSslText)
                 Write-Host "   [OK] Apache SSL Port XAMPP dialihkan ke 8444 (Laragon SSL tetap di Port 443)" -ForegroundColor Green
@@ -458,7 +476,7 @@ function Setup-XamppStack {
         $myIni = Join-Path $xamppDir "mysql\bin\my.ini"
         if (Test-Path $myIni) {
             $myText = [System.IO.File]::ReadAllText($myIni)
-            $newMyText = $myText -replace '(?m)^port\s*=\s*3306$', 'port = 3307'
+            $newMyText = $myText -replace '(?m)^port\s*=\s*3306\s*$', 'port = 3307'
             if ($myText -ne $newMyText) {
                 [System.IO.File]::WriteAllText($myIni, $newMyText)
                 Write-Host "   [OK] MySQL Port XAMPP dialihkan ke 3307 (Laragon & Laravel standar tetap di Port 3306)" -ForegroundColor Green
@@ -481,6 +499,19 @@ function Setup-XamppStack {
                     [System.IO.File]::WriteAllText($pmaConfig, $newPmaText)
                     Write-Host "   [OK] phpMyAdmin XAMPP diperbarui ke MySQL Port 3307" -ForegroundColor Green
                 }
+            }
+        }
+
+        # E. Sinkronisasi Port di XAMPP Control Panel config (xampp-control.ini)
+        $xamppIni = Join-Path $xamppDir "xampp-control.ini"
+        if (Test-Path $xamppIni) {
+            $iniTxt = [System.IO.File]::ReadAllText($xamppIni)
+            $newIniTxt = $iniTxt -replace '(?m)^Apache\s*=\s*(80|8080)\s*$', 'Apache = 8088'
+            $newIniTxt = $newIniTxt -replace '(?m)^ApacheSSL\s*=\s*(443|8443)\s*$', 'ApacheSSL = 8444'
+            $newIniTxt = $newIniTxt -replace '(?m)^MySQL\s*=\s*3306\s*$', 'MySQL = 3307'
+            if ($iniTxt -ne $newIniTxt) {
+                [System.IO.File]::WriteAllText($xamppIni, $newIniTxt)
+                Write-Host "   [OK] Port pada XAMPP Control Panel disinkronkan ke 8088/8444/3307." -ForegroundColor Green
             }
         }
 
@@ -659,7 +690,14 @@ function Test-LabSoftwareStatus {
         @{ Name = "Node.js"; Cmd = { node --version } },
         @{ Name = "NPM"; Cmd = { npm --version } },
         @{ Name = "Composer"; Cmd = { composer --version } },
-        @{ Name = "Laravel CLI"; Cmd = { laravel --version } },
+        @{ Name = "Laravel CLI"; Cmd = {
+            $lBat = Join-Path $env:APPDATA "Composer\vendor\bin\laravel.bat"
+            if (Test-Path $lBat) {
+                & $lBat --version
+            } else {
+                laravel --version
+            }
+        } },
         @{ Name = "VS Code"; Cmd = { code --version } }
     )
 
@@ -679,22 +717,31 @@ function Test-LabSoftwareStatus {
     }
 
     $guiApps = @(
-        @{ Name = "Delphi (RAD Studio)"; Path = "C:\Program Files*\Embarcadero\Studio\*\bin\bds.exe" },
-        @{ Name = "Cisco Packet Tracer"; Path = "C:\Program Files\Cisco Packet Tracer *\bin\PacketTracer.exe" },
-        @{ Name = "Visual Studio 2022";  Path = "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe" },
-        @{ Name = "Proteus Design Suite";Path = "C:\Program Files*\Labcenter Electronics\Proteus *\BIN\PDS.EXE" },
-        @{ Name = "Android Studio";      Path = "C:\Program Files\Android\Android Studio\bin\studio64.exe" },
-        @{ Name = "Oracle VirtualBox";   Path = "C:\Program Files\Oracle\VirtualBox\VirtualBox.exe" },
-        @{ Name = "Apache NetBeans";     Path = "C:\Program Files\NetBeans*\bin\netbeans64.exe" },
-        @{ Name = "QGIS Desktop";        Path = "C:\Program Files\QGIS *\bin\qgis-bin.exe" },
-        @{ Name = "Arduino IDE";         Path = "C:\Program Files\Arduino IDE\Arduino IDE.exe" },
-        @{ Name = "Laragon";             Path = "C:\laragon\laragon.exe" },
-        @{ Name = "XAMPP";               Path = "C:\xampp\xampp-control.exe" }
+        @{ Name = "Delphi (RAD Studio)"; Path = @("C:\Program Files*\Embarcadero\Studio\*\bin\bds.exe", "C:\Program Files (x86)\Embarcadero\Studio\*\bin\bds.exe") },
+        @{ Name = "Cisco Packet Tracer"; Path = @("C:\Program Files\Cisco Packet Tracer *\bin\PacketTracer.exe", "C:\Program Files (x86)\Cisco Packet Tracer *\bin\PacketTracer.exe") },
+        @{ Name = "Visual Studio 2022";  Path = @("C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe", "C:\Program Files (x86)\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe") },
+        @{ Name = "Proteus Design Suite";Path = @("C:\Program Files*\Labcenter Electronics\Proteus *\BIN\PDS.EXE", "C:\Program Files (x86)\Labcenter Electronics\Proteus *\BIN\PDS.EXE") },
+        @{ Name = "Android Studio";      Path = @("C:\Program Files\Android\Android Studio\bin\studio64.exe", "C:\Program Files (x86)\Android\Android Studio\bin\studio64.exe", "$env:LOCALAPPDATA\Programs\Android\Android Studio\bin\studio64.exe") },
+        @{ Name = "Oracle VirtualBox";   Path = @("C:\Program Files\Oracle\VirtualBox\VirtualBox.exe", "C:\Program Files (x86)\Oracle\VirtualBox\VirtualBox.exe") },
+        @{ Name = "Apache NetBeans";     Path = @("C:\Program Files\*NetBeans*\bin\netbeans*.exe", "C:\Program Files (x86)\*NetBeans*\bin\netbeans*.exe") },
+        @{ Name = "QGIS Desktop";        Path = @("C:\Program Files\QGIS *\bin\qgis-bin.exe", "C:\Program Files\QGIS *\bin\qgis.exe") },
+        @{ Name = "Arduino IDE";         Path = @("C:\Program Files\Arduino IDE\Arduino IDE.exe", "$env:LOCALAPPDATA\Programs\Arduino IDE\Arduino IDE.exe", "C:\Program Files (x86)\Arduino\arduino.exe", "C:\Program Files\Arduino\arduino.exe") },
+        @{ Name = "Laragon";             Path = @("C:\laragon\laragon.exe", "D:\laragon\laragon.exe", "E:\laragon\laragon.exe") },
+        @{ Name = "XAMPP";               Path = @("C:\xampp\xampp-control.exe", "D:\xampp\xampp-control.exe") }
     )
 
     Write-Host "`nSoftware Desktop & GUI Terpasang:" -ForegroundColor Cyan
     foreach ($gui in $guiApps) {
-        $found = Get-Item $gui.Path -ErrorAction SilentlyContinue | Select-Object -First 1
+        $found = $null
+        $paths = @($gui.Path)
+        foreach ($p in $paths) {
+            $f = Get-ChildItem -Path $p -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $f) {
+                $f = Get-Item -Path $p -ErrorAction SilentlyContinue | Select-Object -First 1
+            }
+            if ($f) { $found = $f; break }
+        }
+
         Write-Host -NoNewline ("- {0,-22}: " -f $gui.Name)
         if ($found) {
             Write-Host "Terpasang ($($found.FullName))" -ForegroundColor Green
@@ -739,7 +786,7 @@ function Run-FullInstallation {
     Install-AppSmart -Name "Oracle VM VirtualBox" -FilePattern "*VirtualBox*.exe" -SilentArgs "--silent" -WingetId "Oracle.VirtualBox" -CheckPath "C:\Program Files\Oracle\VirtualBox\VirtualBox.exe"
 
     # 6. Apache NetBeans (Otomatis Silent)
-    Install-AppSmart -Name "Apache NetBeans IDE" -FilePattern "*NetBeans*.exe" -SilentArgs "--silent" -WingetId "Apache.NetBeans" -CheckPath "C:\Program Files\NetBeans*\bin\netbeans64.exe"
+    Install-AppSmart -Name "Apache NetBeans IDE" -FilePattern "*NetBeans*.exe" -SilentArgs "--silent" -WingetId "Apache.NetBeans" -CheckPath @("C:\Program Files\*NetBeans*\bin\netbeans*.exe", "C:\Program Files (x86)\*NetBeans*\bin\netbeans*.exe")
 
     # 7. Android Studio (Otomatis Silent)
     Install-AppSmart -Name "Android Studio" -FilePattern "*Android*Studio*.exe" -SilentArgs "/S" -WingetId "Google.AndroidStudio" -CheckPath "C:\Program Files\Android\Android Studio\bin\studio64.exe"
@@ -757,7 +804,11 @@ function Run-FullInstallation {
                      -CheckPath "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe"
 
     # 10. Arduino IDE (Arduino Uno, Nano, Mega, IoT)
-    Install-AppSmart -Name "Arduino IDE" -FilePattern "*arduino*.msi" -SilentArgs "/qn" -WingetId "ArduinoSA.IDE.stable" -CheckPath "C:\Program Files\Arduino IDE\Arduino IDE.exe"
+    Install-AppSmart -Name "Arduino IDE" `
+                     -FilePattern "*arduino*.msi" `
+                     -SilentArgs "/qn ALLUSERS=1" `
+                     -WingetId "ArduinoSA.IDE.stable" `
+                     -CheckPath @("C:\Program Files\Arduino IDE\Arduino IDE.exe", "$env:LOCALAPPDATA\Programs\Arduino IDE\Arduino IDE.exe", "C:\Program Files (x86)\Arduino\arduino.exe", "C:\Program Files\Arduino\arduino.exe")
 
     # 11. Laragon (Installer Resmi 6.0.0 + Auto-Overlay Stack Custom)
     Setup-LaragonStack
