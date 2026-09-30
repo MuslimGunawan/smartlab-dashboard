@@ -51,27 +51,30 @@ if (-not (Test-Administrator)) {
 
 # 2. Deteksi Lokasi Folder Installer Offline (Apps/)
 # Cerdas: Mendeteksi apakah script berada di dalam folder Apps, di samping folder Apps, atau di USB/Drive lain
-$candidateDirs = @(
-    $PSScriptRoot,
-    (Join-Path $PSScriptRoot "Apps"),
-    (Split-Path -Parent $PSScriptRoot),
-    (Join-Path (Split-Path -Parent $PSScriptRoot) "Apps"),
-    (Get-Location).Path,
-    (Join-Path (Get-Location).Path "Apps")
-)
+$candidateDirs = @()
 
-# Tambahkan pencarian drive lain (misal flashdisk E:\Apps, D:\Apps, F:\Apps, dsb.)
+# Prioritaskan folder yang secara eksplisit bernama "Apps"
+if ((Split-Path -Leaf $PSScriptRoot) -ieq "Apps") { $candidateDirs += $PSScriptRoot }
+$candidateDirs += (Join-Path $PSScriptRoot "Apps")
+$candidateDirs += (Join-Path (Split-Path -Parent $PSScriptRoot) "Apps")
+$candidateDirs += (Join-Path (Get-Location).Path "Apps")
+
+# Tambahkan pencarian drive lain (misal flashdisk E:\Lab_Software\Apps, E:\Apps, dsb.)
 $driveLetters = [System.IO.DriveInfo]::GetDrives() | Where-Object { $_.DriveType -match 'Removable|Fixed' -and $_.IsReady } | Select-Object -ExpandProperty RootDirectory
 foreach ($d in $driveLetters) {
     $candidateDirs += (Join-Path $d.FullName "Lab_Software\Apps")
     $candidateDirs += (Join-Path $d.FullName "Apps")
 }
 
+# Fallback ke folder root skrip jika Apps tidak ditemukan terpisah
+$candidateDirs += $PSScriptRoot
+$candidateDirs += (Split-Path -Parent $PSScriptRoot)
+
 $AppsDir = $null
 foreach ($cand in $candidateDirs) {
     if (-not [string]::IsNullOrWhiteSpace($cand) -and (Test-Path $cand)) {
-        # Valid jika mengandung file installer atau folder Laragon_Custom_Stack
-        $hasInstallers = Get-ChildItem -Path $cand -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -match "exe|msi|bat" } | Select-Object -First 1
+        # Valid jika mengandung file installer exe/msi (bukan sekadar bat) atau folder Laragon_Custom_Stack
+        $hasInstallers = Get-ChildItem -Path $cand -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -match "exe|msi" -and $_.Name -notmatch "jalankan|test" } | Select-Object -First 1
         $hasCustomStack = Test-Path (Join-Path $cand "Laragon_Custom_Stack")
         if ($hasInstallers -or $hasCustomStack) {
             $AppsDir = (Get-Item $cand).FullName
@@ -102,6 +105,58 @@ if (Test-Path $AppsDir) {
     Write-Host "    Script akan menggunakan mode unduh otomatis (Winget Online)." -ForegroundColor Yellow
 }
 Write-Host "------------------------------------------------------------------------------`n"
+
+# 2.1 Cek Pembaruan Script Otomatis dari Cloud SmartLab (GitHub / Web Dashboard)
+$SCRIPT_CURRENT_VERSION = "2.4.2"
+
+function Check-ScriptSelfUpdate {
+    $scriptFile = $PSCommandPath
+    if (-not $scriptFile) { $scriptFile = $MyInvocation.MyCommand.Path }
+    if (-not $scriptFile -or (-not (Test-Path $scriptFile))) { return }
+
+    Write-Host "[i] Memeriksa versi pembaruan script ke server SmartLab..." -ForegroundColor DarkGray
+    try {
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+        $updateUrls = @(
+            "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/install-lab-software.ps1",
+            "https://smartlab.is-best.net/scripts/install-lab-software.ps1"
+        )
+        $remoteContent = $null
+        foreach ($url in $updateUrls) {
+            try {
+                $req = [System.Net.WebRequest]::Create($url)
+                $req.Timeout = 3000
+                $resp = $req.GetResponse()
+                $stream = $resp.GetResponseStream()
+                $reader = New-Object System.IO.StreamReader($stream)
+                $remoteContent = $reader.ReadToEnd()
+                $reader.Close()
+                $resp.Close()
+                if (-not [string]::IsNullOrWhiteSpace($remoteContent) -and $remoteContent -match '\$SCRIPT_CURRENT_VERSION\s*=\s*"([^"]+)"') {
+                    break
+                }
+            } catch {}
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($remoteContent) -and $remoteContent -match '\$SCRIPT_CURRENT_VERSION\s*=\s*"([^"]+)"') {
+            $remoteVer = $matches[1]
+            if ([version]$remoteVer -gt [version]$SCRIPT_CURRENT_VERSION) {
+                Write-Host "[*] Versi script baru terdeteksi (v$remoteVer)! Memperbarui script lokal..." -ForegroundColor Cyan
+                [System.IO.File]::WriteAllText($scriptFile, $remoteContent, [System.Text.Encoding]::UTF8)
+                Write-Host "[OK] Script berhasil diperbarui ke versi $remoteVer! Menjalankan ulang script..." -ForegroundColor Green
+                Start-Sleep -Seconds 1
+                Start-Process powershell.exe -ArgumentList ("-NoProfile -ExecutionPolicy Bypass -File `"{0}`"" -f $scriptFile)
+                exit
+            } else {
+                Write-Host "[OK] Script lokal sudah versi terbaru (v$SCRIPT_CURRENT_VERSION)." -ForegroundColor DarkGray
+            }
+        }
+    } catch {
+        # Jika offline / tanpa koneksi internet, lanjutkan tanpa hambatan
+    }
+}
+
+Check-ScriptSelfUpdate
 
 # 3. Fungsi Helper Tambah ke System PATH
 function Add-ToSystemPath {
@@ -209,8 +264,14 @@ function Install-AppSmart {
                 Write-Host "[i] Menjalankan instalasi lokal secara otomatis dari flashdisk..." -ForegroundColor Yellow
                 $ext = $offlineFile.Extension.ToLower()
                 if ($ext -eq ".msi") {
-                    $argsToRun = @("/i", $offlineFile.FullName, "/qn", "/norestart")
-                    $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $argsToRun -Wait -PassThru
+                    $cleanSilent = if ($SilentArgs) { $SilentArgs -replace '(?i)\s*/qn\b', '' -replace '(?i)\s*/quiet\b', '' -replace '(?i)\s*/norestart\b', '' } else { "" }
+                    $cleanSilent = $cleanSilent.Trim()
+                    $msiArgs = if ([string]::IsNullOrWhiteSpace($cleanSilent)) {
+                        "/i `"$($offlineFile.FullName)`" /qn /norestart"
+                    } else {
+                        "/i `"$($offlineFile.FullName)`" /qn /norestart $cleanSilent"
+                    }
+                    $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru
                 } else {
                     $argsList = Convert-ArgsToArray $SilentArgs
                     if ($argsList.Count -gt 0) {
@@ -220,8 +281,8 @@ function Install-AppSmart {
                     }
                 }
 
-                # Kode 0 = Sukses, 3010 = Sukses (Butuh restart), 1223 = Elevated/UAC Success (Nullsoft / NSIS)
-                if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010 -or $proc.ExitCode -eq 1223) {
+                # Kode 0 = Sukses, 3010 = Sukses (Butuh restart), 1641 = Sukses reboot, 1223 = Elevated/UAC Success, 1638 = Versi sudah ada
+                if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010 -or $proc.ExitCode -eq 1641 -or $proc.ExitCode -eq 1223 -or $proc.ExitCode -eq 1638) {
                     Write-Host "[OK] Berhasil menginstal $Name dari folder Apps!" -ForegroundColor Green
                     return
                 } else {
@@ -249,7 +310,14 @@ function Install-AppSmart {
 
             $ext = [System.IO.Path]::GetExtension($destFile).ToLower()
             if ($ext -eq ".msi") {
-                $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList @("/i", $destFile, "/qn", "/norestart") -Wait -PassThru
+                $cleanSilent = if ($SilentArgs) { $SilentArgs -replace '(?i)\s*/qn\b', '' -replace '(?i)\s*/quiet\b', '' -replace '(?i)\s*/norestart\b', '' } else { "" }
+                $cleanSilent = $cleanSilent.Trim()
+                $msiArgs = if ([string]::IsNullOrWhiteSpace($cleanSilent)) {
+                    "/i `"$destFile`" /qn /norestart"
+                } else {
+                    "/i `"$destFile`" /qn /norestart $cleanSilent"
+                }
+                $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru
             } else {
                 $argsList = Convert-ArgsToArray $SilentArgs
                 if ($argsList.Count -gt 0) {
@@ -258,7 +326,7 @@ function Install-AppSmart {
                     $proc = Start-Process -FilePath $destFile -Wait -PassThru
                 }
             }
-            if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
+            if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010 -or $proc.ExitCode -eq 1641 -or $proc.ExitCode -eq 1223 -or $proc.ExitCode -eq 1638) {
                 Write-Host "[OK] Berhasil menginstal $Name!" -ForegroundColor Green
                 return
             }
@@ -283,8 +351,14 @@ function Install-AppSmart {
                 Write-Host "[i] Melanjutkan instalasi lokal..." -ForegroundColor Yellow
                 $ext = $newOfflineFile.Extension.ToLower()
                 if ($ext -eq ".msi") {
-                    $argsToRun = @("/i", $newOfflineFile.FullName, "/qn", "/norestart")
-                    $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $argsToRun -Wait -PassThru
+                    $cleanSilent = if ($SilentArgs) { $SilentArgs -replace '(?i)\s*/qn\b', '' -replace '(?i)\s*/quiet\b', '' -replace '(?i)\s*/norestart\b', '' } else { "" }
+                    $cleanSilent = $cleanSilent.Trim()
+                    $msiArgs = if ([string]::IsNullOrWhiteSpace($cleanSilent)) {
+                        "/i `"$($newOfflineFile.FullName)`" /qn /norestart"
+                    } else {
+                        "/i `"$($newOfflineFile.FullName)`" /qn /norestart $cleanSilent"
+                    }
+                    $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru
                 } else {
                     $argsList = Convert-ArgsToArray $SilentArgs
                     if ($argsList.Count -gt 0) {
@@ -293,7 +367,7 @@ function Install-AppSmart {
                         $proc = Start-Process -FilePath $newOfflineFile.FullName -Wait -PassThru
                     }
                 }
-                if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
+                if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010 -or $proc.ExitCode -eq 1641 -or $proc.ExitCode -eq 1223 -or $proc.ExitCode -eq 1638) {
                     Write-Host "[OK] Berhasil menginstal $Name!" -ForegroundColor Green
                     return
                 }
@@ -326,14 +400,16 @@ function Install-AppSmart {
 # 6. Fungsi Khusus Setup Java JDK & JAVA_HOME
 function Setup-JavaJDK {
     Install-AppSmart -Name "Java JDK 17 (OpenJDK Temurin)" `
-                     -FilePattern "*Temurin*17*.msi" `
-                     -SilentArgs "/qn" `
+                     -FilePattern @("*Temurin*17*.msi", "*jdk*17*.msi", "*Temurin*.msi") `
+                     -SilentArgs "ADDLOCAL=FeatureMain,FeatureEnvironment,FeatureJarFileRunWith,FeatureJavaHome /qn" `
                      -WingetId "EclipseAdoptium.Temurin.17.JDK" `
-                     -CheckPath "C:\Program Files\Eclipse Adoptium\jdk-17*\bin\javac.exe"
+                     -CheckPath @("C:\Program Files\Eclipse Adoptium\jdk-17*\bin\javac.exe", "C:\Program Files\Java\jdk-17*\bin\javac.exe")
 
     $jdkSearchPaths = @(
         "C:\Program Files\Eclipse Adoptium\jdk-17*",
+        "C:\Program Files\Eclipse Adoptium\jdk-2*",
         "C:\Program Files\Java\jdk-17*",
+        "C:\Program Files\Java\jdk-2*",
         "C:\Program Files\Java\jdk*"
     )
     $jdkPath = $null
@@ -344,7 +420,12 @@ function Setup-JavaJDK {
 
     if ($jdkPath) {
         Set-SystemEnvVar -Name "JAVA_HOME" -Value $jdkPath
-        Add-ToSystemPath -DirToAdd (Join-Path $jdkPath "bin")
+        $javaBin = Join-Path $jdkPath "bin"
+        Add-ToSystemPath -DirToAdd $javaBin
+        $env:JAVA_HOME = $jdkPath
+        if ($env:Path -notlike "*$javaBin*") {
+            $env:Path = "$javaBin;" + $env:Path
+        }
         Write-Host "[OK] JAVA_HOME berhasil dikonfigurasi ke $jdkPath" -ForegroundColor Green
     } else {
         Write-Host "[!] Path JDK tidak terdeteksi otomatis. Silakan atur JAVA_HOME manual jika diperlukan." -ForegroundColor Yellow
@@ -553,7 +634,37 @@ function Setup-ComposerAndLaravel {
     Write-Host "Memproses: Composer (PHP Dependency Manager) & Laravel Setup" -ForegroundColor Cyan
     Write-Host "========================================================" -ForegroundColor Cyan
 
-    # A. Cek apakah Composer sudah terpasang
+    # Pastikan Composer tidak pernah meminta konfirmasi interaktif di PowerShell Administrator
+    $env:COMPOSER_NO_INTERACTION = "1"
+    $env:COMPOSER_ALLOW_SUPERUSER = "1"
+    [Environment]::SetEnvironmentVariable("COMPOSER_NO_INTERACTION", "1", [EnvironmentVariableTarget]::Process)
+    [Environment]::SetEnvironmentVariable("COMPOSER_ALLOW_SUPERUSER", "1", [EnvironmentVariableTarget]::Process)
+
+    # 1. Cari PHP yang aktif di sistem (Laragon atau XAMPP) dan SELALU masukkan ke PATH sistem & sesi aktif
+    $phpPath = $null
+    $phpSearch = @(
+        "C:\laragon\bin\php\php-*\php.exe",
+        "C:\laragon\bin\php\*\php.exe",
+        "C:\xampp\php\php.exe"
+    )
+    foreach ($pattern in $phpSearch) {
+        $found = Get-Item $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($found) { $phpPath = $found.FullName; break }
+    }
+
+    $phpDir = $null
+    if ($phpPath) {
+        $phpDir = Split-Path -Parent $phpPath
+        Add-ToSystemPath -DirToAdd $phpDir
+        if ($env:Path -notlike "*$phpDir*") {
+            $env:Path = "$phpDir;" + $env:Path
+        }
+        Write-Host "   [OK] PHP terdeteksi di $phpPath dan ditambahkan ke System PATH." -ForegroundColor Green
+    } else {
+        Write-Host "   [!] PHP belum ditemukan di C:\laragon\bin\php atau C:\xampp\php." -ForegroundColor Yellow
+    }
+
+    # 2. Cek apakah Composer sudah terpasang
     $composerInstalled = $false
     $composerExe = Get-Command composer -ErrorAction SilentlyContinue
     if ($composerExe) {
@@ -566,18 +677,6 @@ function Setup-ComposerAndLaravel {
         Write-Host "   [OK SUDAH TERPASANG] Composer terdeteksi di sistem." -ForegroundColor Green
         Write-Host "   -> Melewati instalasi Composer (Skip)." -ForegroundColor DarkGray
     } else {
-        # Cari PHP yang aktif di sistem (Laragon atau XAMPP)
-        $phpPath = $null
-        $phpSearch = @(
-            "C:\laragon\bin\php\php-*\php.exe",
-            "C:\laragon\bin\php\*\php.exe",
-            "C:\xampp\php\php.exe"
-        )
-        foreach ($pattern in $phpSearch) {
-            $found = Get-Item $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($found) { $phpPath = $found.FullName; break }
-        }
-
         $composerInstaller = Get-ChildItem -Path $AppsDir -Filter "*Composer*.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1
         if (-not $composerInstaller) {
             Write-Host "   [i] File Composer offline belum ada di Apps. Mengunduh Composer-Setup.exe otomatis..." -ForegroundColor Yellow
@@ -598,18 +697,18 @@ function Setup-ComposerAndLaravel {
         if ($composerInstaller) {
             Write-Host "   [OK] Ditemukan installer: $($composerInstaller.Name)" -ForegroundColor Green
             Write-Host "   [i] Menjalankan instalasi Composer secara silent..." -ForegroundColor Yellow
-            $cArgsList = @("/VERYSILENT", "/NORESTART", "/SP-", "/SUPPRESSMSGBOXES")
+            $cArgs = "/VERYSILENT /NORESTART /SP- /SUPPRESSMSGBOXES"
             if ($phpPath) {
-                $cArgsList += "/PHP=$phpPath"
+                $cArgs += " /PHP=`"$phpPath`""
             }
-            $proc = Start-Process -FilePath $composerInstaller.FullName -ArgumentList $cArgsList -Wait -PassThru
+            $proc = Start-Process -FilePath $composerInstaller.FullName -ArgumentList $cArgs -Wait -PassThru
             if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
                 Write-Host "   [OK] Berhasil memasang Composer!" -ForegroundColor Green
             }
         }
     }
 
-    # B. Pastikan ekstensi zip, fileinfo, openssl, curl aktif di seluruh php.ini yang terpasang
+    # 3. Pastikan ekstensi zip, fileinfo, openssl, curl aktif di seluruh php.ini yang terpasang
     $allPhpInis = @(
         (Get-ChildItem -Path "C:\laragon\bin\php\*\php.ini" -File -ErrorAction SilentlyContinue),
         (Get-ChildItem -Path "C:\xampp\php\php.ini" -File -ErrorAction SilentlyContinue)
@@ -638,7 +737,7 @@ function Setup-ComposerAndLaravel {
         } catch {}
     }
 
-    # C. Tambahkan Laragon git/usr/bin ke PATH jika ada (sebagai fallback unzip/7z untuk Composer)
+    # 4. Tambahkan Laragon git/usr/bin ke PATH jika ada (sebagai fallback unzip/7z untuk Composer)
     $laragonGitBins = @("C:\laragon\bin\git\bin", "C:\laragon\bin\git\usr\bin")
     foreach ($gb in $laragonGitBins) {
         if (Test-Path $gb) {
@@ -646,7 +745,7 @@ function Setup-ComposerAndLaravel {
         }
     }
 
-    # Pastikan Path Composer & Composer Vendor bin masuk ke PATH
+    # 5. Pastikan Path Composer & Composer Vendor bin masuk ke PATH
     $composerBin = "C:\ProgramData\ComposerSetup\bin"
     if (Test-Path $composerBin) { Add-ToSystemPath -DirToAdd $composerBin }
 
@@ -656,10 +755,13 @@ function Setup-ComposerAndLaravel {
     }
     Add-ToSystemPath -DirToAdd $composerGlobalVendor
 
-    # Perbarui PATH sesi sekarang agar perintah laravel langsung dapat diuji
+    # Perbarui PATH sesi sekarang agar perintah composer/laravel langsung dapat diuji
     $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+    if ($phpDir -and $env:Path -notlike "*$phpDir*") {
+        $env:Path = "$phpDir;" + $env:Path
+    }
 
-    # B. Setup Laravel Installer Global (composer global require laravel/installer)
+    # 6. Setup Laravel Installer Global (composer global require laravel/installer)
     $laravelBat = Join-Path $composerGlobalVendor "laravel.bat"
     if (Test-Path $laravelBat) {
         Write-Host "   [OK SUDAH TERPASANG] Laravel Installer terdeteksi di $laravelBat" -ForegroundColor Green
@@ -667,8 +769,8 @@ function Setup-ComposerAndLaravel {
         Write-Host "`n   [i] Menyiapkan Laravel Installer secara global..." -ForegroundColor Yellow
         try {
             $compCmd = Get-Command composer -ErrorAction SilentlyContinue
-            if ($compCmd) {
-                & composer global require laravel/installer --quiet
+            if ($compCmd -and (Get-Command php -ErrorAction SilentlyContinue)) {
+                & composer global require laravel/installer --quiet --no-interaction
                 if ($LASTEXITCODE -eq 0) {
                     Write-Host "   [OK] Berhasil memasang Laravel Installer! Perintah 'laravel new' siap digunakan." -ForegroundColor Green
                 } else {
@@ -690,35 +792,61 @@ function Test-LabSoftwareStatus {
     Write-Host "========================================================" -ForegroundColor Cyan
 
     $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+    $env:COMPOSER_NO_INTERACTION = "1"
+    $env:COMPOSER_ALLOW_SUPERUSER = "1"
+
+    # Pastikan PHP terdaftar di PATH sesi jika terpasang
+    $phpSearch = @(
+        "C:\laragon\bin\php\php-*\php.exe",
+        "C:\laragon\bin\php\*\php.exe",
+        "C:\xampp\php\php.exe"
+    )
+    foreach ($pattern in $phpSearch) {
+        $found = Get-Item $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($found) {
+            $pDir = Split-Path -Parent $found.FullName
+            if ($env:Path -notlike "*$pDir*") { $env:Path = "$pDir;" + $env:Path }
+            break
+        }
+    }
 
     $cliChecks = @(
-        @{ Name = "Python 3"; Cmd = { python --version } },
-        @{ Name = "Pip"; Cmd = { pip --version } },
-        @{ Name = "Java (JDK)"; Cmd = { java -version } },
+        @{ Name = "Python 3"; Cmd = { python --version 2>&1 } },
+        @{ Name = "Pip"; Cmd = { pip --version 2>&1 } },
+        @{ Name = "Java (JDK)"; Cmd = { java -version 2>&1 } },
         @{ Name = "JAVA_HOME"; Cmd = { $env:JAVA_HOME } },
-        @{ Name = "Node.js"; Cmd = { node --version } },
-        @{ Name = "NPM"; Cmd = { npm --version } },
-        @{ Name = "Composer"; Cmd = { composer --version } },
+        @{ Name = "Node.js"; Cmd = { node --version 2>&1 } },
+        @{ Name = "NPM"; Cmd = { npm --version 2>&1 } },
+        @{ Name = "PHP CLI"; Cmd = { php -v 2>&1 } },
+        @{ Name = "Composer"; Cmd = { composer --version --no-interaction 2>&1 } },
         @{ Name = "Laravel CLI"; Cmd = {
             $lBat = Join-Path $env:APPDATA "Composer\vendor\bin\laravel.bat"
             if (Test-Path $lBat) {
-                & $lBat --version
+                & $lBat --version 2>&1
             } else {
-                laravel --version
+                laravel --version 2>&1
             }
         } },
-        @{ Name = "VS Code"; Cmd = { code --version } }
+        @{ Name = "VS Code"; Cmd = { code --version 2>&1 } }
     )
 
     foreach ($chk in $cliChecks) {
         Write-Host -NoNewline ("- {0,-18}: " -f $chk.Name)
         try {
-            $res = & $chk.Cmd 2>&1 | Out-String
-            if ($LASTEXITCODE -eq 0 -or !([string]::IsNullOrWhiteSpace($res))) {
-                $firstLine = ($res.Trim() -split "`n")[0]
-                Write-Host $firstLine -ForegroundColor Green
+            $job = Start-Job -ScriptBlock $chk.Cmd
+            if (Wait-Job $job -Timeout 4) {
+                $res = Receive-Job $job -ErrorAction SilentlyContinue | Out-String
+                Remove-Job $job -Force -ErrorAction SilentlyContinue
+                if (!([string]::IsNullOrWhiteSpace($res))) {
+                    $firstLine = ($res.Trim() -split "`r?`n")[0]
+                    Write-Host $firstLine -ForegroundColor Green
+                } else {
+                    Write-Host "Belum Terdeteksi di PATH" -ForegroundColor Yellow
+                }
             } else {
-                Write-Host "Belum Terdeteksi di PATH" -ForegroundColor Yellow
+                Stop-Job $job -Force -ErrorAction SilentlyContinue
+                Remove-Job $job -Force -ErrorAction SilentlyContinue
+                Write-Host "Belum Merespons / Timeout" -ForegroundColor Yellow
             }
         } catch {
             Write-Host "Belum Terinstal / Perlu Restart Shell" -ForegroundColor Red
@@ -794,8 +922,36 @@ function Run-FullInstallation {
     # 5. Oracle VM VirtualBox (Otomatis Silent)
     Install-AppSmart -Name "Oracle VM VirtualBox" -FilePattern "*VirtualBox*.exe" -SilentArgs "--silent" -WingetId "Oracle.VirtualBox" -CheckPath "C:\Program Files\Oracle\VirtualBox\VirtualBox.exe"
 
-    # 6. Apache NetBeans (Otomatis Silent)
-    Install-AppSmart -Name "Apache NetBeans IDE" -FilePattern "*NetBeans*.exe" -SilentArgs "--silent" -WingetId "Apache.NetBeans" -CheckPath @("C:\Program Files\*NetBeans*\bin\netbeans*.exe", "C:\Program Files (x86)\*NetBeans*\bin\netbeans*.exe")
+    # 6. Apache NetBeans (Otomatis Silent dengan Java JDK 17+ Terdeteksi)
+    $nbJdkPath = $null
+    $nbJdkCandidates = @(
+        $env:JAVA_HOME,
+        "C:\Program Files\Eclipse Adoptium\jdk-17*",
+        "C:\Program Files\Eclipse Adoptium\jdk-2*",
+        "C:\Program Files\Java\jdk-17*",
+        "C:\Program Files\Java\jdk-2*"
+    )
+    foreach ($cand in $nbJdkCandidates) {
+        if (-not [string]::IsNullOrWhiteSpace($cand)) {
+            $f = Get-Item $cand -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($f -and (Test-Path (Join-Path $f.FullName "bin\java.exe"))) {
+                $nbJdkPath = $f.FullName
+                break
+            }
+        }
+    }
+
+    $nbSilentArgs = "--silent"
+    if ($nbJdkPath) {
+        $nbSilentArgs += " --jdkhome `"$nbJdkPath`""
+        Write-Host "   [i] Menghubungkan Apache NetBeans ke JDK: $nbJdkPath" -ForegroundColor Cyan
+    }
+
+    Install-AppSmart -Name "Apache NetBeans IDE" `
+                     -FilePattern "*NetBeans*.exe" `
+                     -SilentArgs $nbSilentArgs `
+                     -WingetId "Apache.NetBeans" `
+                     -CheckPath @("C:\Program Files\*NetBeans*\bin\netbeans*.exe", "C:\Program Files (x86)\*NetBeans*\bin\netbeans*.exe")
 
     # 7. Android Studio (Otomatis Silent)
     Install-AppSmart -Name "Android Studio" -FilePattern "*Android*Studio*.exe" -SilentArgs "/S" -WingetId "Google.AndroidStudio" -CheckPath "C:\Program Files\Android\Android Studio\bin\studio64.exe"
