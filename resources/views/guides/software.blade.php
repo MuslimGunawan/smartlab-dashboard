@@ -996,25 +996,25 @@
                                 <li>
                                     <span class="step-num">1</span>
                                     <div class="step-content">
-                                        <strong>Buka Windows PowerShell</strong> (Bisa langsung di dalam drive Flashdisk Anda, misal <code>E:\</code>, atau di folder mana pun di PC lab).
+                                        <strong>Masuk ke Flashdisk Anda</strong> di File Explorer, tahan tombol <kbd style="background:#334155;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px;">Shift</kbd> lalu <strong>klik kanan</strong> di area kosong, kemudian pilih <em>"Open PowerShell window here"</em> (atau <em>"Buka jendela PowerShell di sini"</em>).
                                     </div>
                                 </li>
                                 <li>
                                     <span class="step-num">2</span>
                                     <div class="step-content">
-                                        <strong>Klik Salin Perintah di atas</strong>, tempelkan (<em>paste</em>) ke terminal PowerShell, lalu tekan <kbd style="background:#334155;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px;">Enter</kbd>.
+                                        <strong>Klik tombol Salin Perintah di atas</strong>, tempelkan (<em>paste</em>) ke jendela PowerShell tersebut, lalu tekan <kbd style="background:#334155;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px;">Enter</kbd>.
                                     </div>
                                 </li>
                                 <li>
                                     <span class="step-num">3</span>
                                     <div class="step-content">
-                                        Script otomatis membuat folder <code>Lab_Software\Apps</code> dan mengunduh berkas launcher resmi terbaru dari GitHub.
+                                        Script otomatis membentuk folder <code>Lab_Software\Apps</code> langsung di flashdisk Anda dan mengunduh berkas launcher resmi terbaru.
                                     </div>
                                 </li>
                                 <li>
                                     <span class="step-num">4</span>
                                     <div class="step-content">
-                                        Saat muncul pertanyaan <em>"Apakah Anda ingin langsung menjalankan instalasi sekarang? (Y/T)"</em>, ketik <strong>Y</strong> lalu Enter.
+                                        Saat muncul konfirmasi <em>"Apakah Anda ingin langsung menjalankan instalasi sekarang? (Y/T)"</em>, ketik <strong>Y</strong> lalu tekan <kbd style="background:#334155;color:#fff;padding:2px 6px;border-radius:4px;font-size:11px;">Enter</kbd>.
                                     </div>
                                 </li>
                                 <li>
