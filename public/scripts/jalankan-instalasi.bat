@@ -47,7 +47,7 @@ if not exist "%TARGET_PS%" (
     echo [i] Script lokal tidak ditemukan, mencoba mengunduh dari Cloud SmartLab...
     if not exist "%~dp0Apps" mkdir "%~dp0Apps" >nul 2>&1
     set "TARGET_PS=%~dp0Apps\install-lab-software.ps1"
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12; try { (New-Object System.Net.WebClient).DownloadFile('https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/install-lab-software.ps1', '%~dp0Apps\install-lab-software.ps1') } catch {}"
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12; $wc = New-Object System.Net.WebClient; $urls = @('https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/install-lab-software.ps1', 'https://smartlab.is-best.net/scripts/install-lab-software.ps1'); foreach ($u in $urls) { try { $wc.DownloadFile($u, '%~dp0Apps\install-lab-software.ps1'); break } catch {} }; $wc.Dispose()"
 )
 
 if not exist "%TARGET_PS%" (

@@ -49,6 +49,11 @@ if (-not (Test-Administrator)) {
     }
 }
 
+# 1.1 Persiapan Sumber Winget (Cegah error sertifikat 0x8a15005e pada sumber msstore)
+try {
+    winget source disable --name msstore 2>$null
+} catch {}
+
 # 2. Deteksi Lokasi Folder Installer Offline (Apps/)
 # Cerdas: Mendeteksi apakah script berada di dalam folder Apps, di samping folder Apps, atau di USB/Drive lain
 $candidateDirs = @()
@@ -107,7 +112,7 @@ if (Test-Path $AppsDir) {
 Write-Host "------------------------------------------------------------------------------`n"
 
 # 2.1 Cek Pembaruan Script Otomatis dari Cloud SmartLab (GitHub / Web Dashboard)
-$SCRIPT_CURRENT_VERSION = "2.4.2"
+$SCRIPT_CURRENT_VERSION = "2.5.0"
 
 function Check-ScriptSelfUpdate {
     $scriptFile = $PSCommandPath
@@ -339,7 +344,17 @@ function Install-AppSmart {
     if (-not [string]::IsNullOrWhiteSpace($WingetId)) {
         Write-Host "[i] File offline belum ada di folder Apps. Mengunduh & menyimpan installer ke Apps/..." -ForegroundColor Yellow
         try {
-            winget download --id "$WingetId" -d "$AppsDir" --accept-package-agreements --accept-source-agreements
+            winget download --id "$WingetId" --source winget -d "$AppsDir" --accept-package-agreements --accept-source-agreements --disable-interactivity
+            
+            # Pasang dependensi offline jika ikut terunduh oleh winget ke folder Dependencies
+            $depDir = Join-Path $AppsDir "Dependencies"
+            if (Test-Path $depDir) {
+                Get-ChildItem -Path $depDir -Filter "*.msi" -File -ErrorAction SilentlyContinue | ForEach-Object {
+                    Write-Host "   [i] Memasang dependensi offline: $($_.Name)..." -ForegroundColor Yellow
+                    Start-Process msiexec.exe -ArgumentList "/i `"$($_.FullName)`" /qn /norestart" -Wait
+                }
+            }
+
             $patterns = @($FilePattern)
             $newOfflineFile = $null
             foreach ($pat in $patterns) {
@@ -376,14 +391,14 @@ function Install-AppSmart {
             Write-Host "[!] Unduhan installer offline gagal, mencoba direct install..." -ForegroundColor Yellow
         }
 
-        # Fallback langsung install jika download bundle bermasalah
-        $installed = winget list --id $WingetId 2>$null
+        # Fallback langsung install via Winget jika download bundle belum menyelesaikan install
+        $installed = winget list --id "$WingetId" --source winget 2>$null
         if ($LASTEXITCODE -eq 0 -and $installed -match $WingetId) {
             Write-Host "[OK] $Name sudah terinstal di sistem ini." -ForegroundColor Green
             return
         }
 
-        $cmd = "winget install --id `"$WingetId`" -e --silent --accept-source-agreements --accept-package-agreements $WingetArgs"
+        $cmd = "winget install --id `"$WingetId`" --source winget -e --silent --accept-source-agreements --accept-package-agreements --disable-interactivity $WingetArgs"
         Invoke-Expression $cmd
 
         if ($LASTEXITCODE -eq 0) {
@@ -459,12 +474,82 @@ function Setup-LaragonStack {
     Write-Host "Memproses: Laragon (WAMP Stack) + Custom Lab Environment" -ForegroundColor Cyan
     Write-Host "========================================================" -ForegroundColor Cyan
 
-    # 1. Jalankan Installer Resmi Laragon
-    Install-AppSmart -Name "Laragon (Installer Resmi)" `
-                     -FilePattern "*Laragon*.exe" `
-                     -SilentArgs "/VERYSILENT /NORESTART /SP- /SUPPRESSMSGBOXES" `
-                     -WingetId "LeNgocKhoa.Laragon" `
-                     -CheckPath "C:\laragon\laragon.exe"
+    $targetLaragon = "C:\laragon"
+    $laragonExe = Join-Path $targetLaragon "laragon.exe"
+
+    if (Test-Path $laragonExe) {
+        Write-Host "   [OK SUDAH TERPASANG] Laragon terdeteksi di $laragonExe." -ForegroundColor Green
+        Write-Host "   -> Melewati proses instalasi dasar Laragon." -ForegroundColor DarkGray
+    } else {
+        # 1. Cari file installer offline Laragon di AppsDir
+        $laragonInstaller = Get-ChildItem -Path $AppsDir -File -ErrorAction SilentlyContinue | Where-Object {
+            $_.Name -match "^laragon.*\.exe$" -or $_.Name -match "laragon-wamp.*\.exe"
+        } | Select-Object -First 1
+
+        if (-not $laragonInstaller) {
+            Write-Host "   [i] File offline Laragon belum ada di Apps. Mengunduh installer resmi..." -ForegroundColor Yellow
+            try {
+                winget download --id "LeNgocKhoa.Laragon" --source winget -d "$AppsDir" --accept-package-agreements --accept-source-agreements --disable-interactivity
+                $laragonInstaller = Get-ChildItem -Path $AppsDir -File -ErrorAction SilentlyContinue | Where-Object {
+                    $_.Name -match "^laragon.*\.exe$" -or $_.Name -match "laragon-wamp.*\.exe"
+                } | Select-Object -First 1
+            } catch {}
+
+            if (-not $laragonInstaller) {
+                try {
+                    $downUrl = "https://github.com/leokhoa/laragon/releases/download/8.7.0/laragon-wamp.exe"
+                    $destExe = Join-Path $AppsDir "laragon-wamp.exe"
+                    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+                    $wc = New-Object System.Net.WebClient
+                    $wc.DownloadFile($downUrl, $destExe)
+                    $wc.Dispose()
+                    $laragonInstaller = Get-Item $destExe -ErrorAction SilentlyContinue
+                } catch {}
+            }
+        }
+
+        if ($laragonInstaller) {
+            Write-Host "   [OK] Ditemukan installer: $($laragonInstaller.Name)" -ForegroundColor Green
+            Write-Host "   [i] Menjalankan instalasi Laragon secara otomatis..." -ForegroundColor Yellow
+
+            # Hentikan proses lama jika ada
+            Get-Process -Name "laragon", "httpd", "mysqld" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds 500
+
+            # Argumen Inno Setup standar
+            $laragonArgs = @("/VERYSILENT", "/NORESTART", "/SP-", "/SUPPRESSMSGBOXES", "/MERGETASKS=!runlaragon,!desktopicon", "/DIR=C:\laragon")
+            $p = Start-Process -FilePath $laragonInstaller.FullName -ArgumentList $laragonArgs -PassThru
+
+            # Watchdog loop: Laragon Inno Setup terkadang menjalankan laragon.exe dengan argumen setup di akhir instalasi,
+            # memicu dialog warning "Laragon: '/VERYSILENT' is not a Laragon command."
+            # Kita pantau proses laragon.exe, dan jika muncul segera terminate agar tidak memblok instalasi!
+            $timeoutCount = 0
+            while (-not $p.HasExited -and $timeoutCount -lt 180) {
+                Start-Sleep -Seconds 1
+                $timeoutCount++
+                $runningLaragon = Get-Process -Name "laragon" -ErrorAction SilentlyContinue
+                if ($runningLaragon) {
+                    Start-Sleep -Milliseconds 1500
+                    $runningLaragon | Stop-Process -Force -ErrorAction SilentlyContinue
+                }
+            }
+
+            # Pembersihan akhir proses laragon jika masih tertinggal
+            Get-Process -Name "laragon" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+
+            if (Test-Path $laragonExe) {
+                Write-Host "   [OK] Berhasil menginstal Laragon resmi di $targetLaragon!" -ForegroundColor Green
+            } else {
+                Write-Host "   [!] Instalasi Laragon selesai dengan status kode: $($p.ExitCode)" -ForegroundColor Yellow
+            }
+        } else {
+            # Fallback winget install langsung jika file installer tidak ditemukan
+            Write-Host "   [i] Mencoba direct install Laragon via Winget..." -ForegroundColor Yellow
+            $cmd = "winget install --id `"LeNgocKhoa.Laragon`" --source winget -e --silent --accept-source-agreements --accept-package-agreements --disable-interactivity"
+            Invoke-Expression $cmd
+            Get-Process -Name "laragon" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        }
+    }
 
     # 2. Periksa apakah paket custom stack (bin, phpMyAdmin, config) ada di folder Apps
     $customStackDir = Join-Path $AppsDir "Laragon_Custom_Stack"
@@ -929,7 +1014,8 @@ function Run-FullInstallation {
         "C:\Program Files\Eclipse Adoptium\jdk-17*",
         "C:\Program Files\Eclipse Adoptium\jdk-2*",
         "C:\Program Files\Java\jdk-17*",
-        "C:\Program Files\Java\jdk-2*"
+        "C:\Program Files\Java\jdk-2*",
+        "C:\Program Files\BellSoft\LibericaJDK-*"
     )
     foreach ($cand in $nbJdkCandidates) {
         if (-not [string]::IsNullOrWhiteSpace($cand)) {
@@ -948,10 +1034,29 @@ function Run-FullInstallation {
     }
 
     Install-AppSmart -Name "Apache NetBeans IDE" `
-                     -FilePattern "*NetBeans*.exe" `
+                     -FilePattern @("*NetBeans*.exe", "*Apache-NetBeans*.exe") `
                      -SilentArgs $nbSilentArgs `
                      -WingetId "Apache.NetBeans" `
+                     -WingetArgs "--override `"$nbSilentArgs`"" `
                      -CheckPath @("C:\Program Files\*NetBeans*\bin\netbeans*.exe", "C:\Program Files (x86)\*NetBeans*\bin\netbeans*.exe")
+
+    # Kunci path netbeans_jdkhome di netbeans.conf agar tidak memunculkan popup Java saat dibuka
+    if ($nbJdkPath) {
+        $nbConfs = Get-ChildItem -Path "C:\Program Files\*NetBeans*\etc\netbeans.conf" -File -ErrorAction SilentlyContinue
+        foreach ($cfg in $nbConfs) {
+            try {
+                $cfgText = [System.IO.File]::ReadAllText($cfg.FullName)
+                $escapedJdk = $nbJdkPath.Replace('\', '/')
+                if ($cfgText -match '(?m)^#?\s*netbeans_jdkhome=') {
+                    $newCfgText = $cfgText -replace '(?m)^#?\s*netbeans_jdkhome=.*$', "netbeans_jdkhome=`"$escapedJdk`""
+                } else {
+                    $newCfgText = $cfgText + "`r`nnetbeans_jdkhome=`"$escapedJdk`"`r`n"
+                }
+                [System.IO.File]::WriteAllText($cfg.FullName, $newCfgText)
+                Write-Host "   [OK] netbeans.conf berhasil dikunci ke JDK: $nbJdkPath" -ForegroundColor Green
+            } catch {}
+        }
+    }
 
     # 7. Android Studio (Otomatis Silent)
     Install-AppSmart -Name "Android Studio" -FilePattern "*Android*Studio*.exe" -SilentArgs "/S" -WingetId "Google.AndroidStudio" -CheckPath "C:\Program Files\Android\Android Studio\bin\studio64.exe"
@@ -962,11 +1067,11 @@ function Run-FullInstallation {
     # 9. Microsoft Visual Studio 2022 Community (Desktop development with C++ Workload)
     $vsArgs = "--passive --norestart --add Microsoft.VisualStudio.Workload.NativeDesktop --includeRecommended"
     Install-AppSmart -Name "Microsoft Visual Studio 2022 Community" `
-                     -FilePattern @("*Visual*Studio*Community*.exe", "*vs*Community*.exe", "*Community*.exe") `
+                     -FilePattern @("*Visual*Studio*Community*.exe", "*vs*Community*.exe", "*Community*.exe", "*vs_setup*.exe", "*vs_installer*.exe") `
                      -SilentArgs $vsArgs `
                      -WingetId "Microsoft.VisualStudio.2022.Community" `
                      -WingetArgs "--override `"$vsArgs`"" `
-                     -CheckPath "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe"
+                     -CheckPath @("C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe", "C:\Program Files (x86)\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe")
 
     # 10. Arduino IDE (Arduino Uno, Nano, Mega, IoT)
     Install-AppSmart -Name "Arduino IDE" `

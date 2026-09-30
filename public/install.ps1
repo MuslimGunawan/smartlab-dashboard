@@ -43,30 +43,48 @@ Write-Host "`n[+] Folder Target Disiapkan: $targetBase" -ForegroundColor Cyan
 Write-Host "    -> $targetBase" -ForegroundColor Gray
 Write-Host "    -> $appsDir" -ForegroundColor Gray
 
-# 2. Unduh Berkas Eksekusi Utama dari GitHub Resmi SmartLab TI
+# 2. Unduh Berkas Eksekusi Utama dari GitHub Resmi SmartLab TI (dengan fallback mirror server)
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
 $wc = New-Object System.Net.WebClient
 
-$batUrl = "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/jalankan-instalasi.bat"
-$psUrl  = "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/install-lab-software.ps1"
+$batUrls = @(
+    "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/jalankan-instalasi.bat",
+    "https://smartlab.is-best.net/scripts/jalankan-instalasi.bat"
+)
+$psUrls  = @(
+    "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/install-lab-software.ps1",
+    "https://smartlab.is-best.net/scripts/install-lab-software.ps1"
+)
 
 $destBat = Join-Path $targetBase "jalankan-instalasi.bat"
 $destPs  = Join-Path $appsDir "install-lab-software.ps1"
 
 Write-Host "`n[i] Mengunduh berkas launcher 'jalankan-instalasi.bat'..." -ForegroundColor Yellow
-try {
-    $wc.DownloadFile($batUrl, $destBat)
-    Write-Host " [OK] Berhasil mengunduh: $destBat" -ForegroundColor Green
-} catch {
-    Write-Host " [!] Gagal mengunduh bat launcher: $($_.Exception.Message)" -ForegroundColor Red
+$batSuccess = $false
+foreach ($bUrl in $batUrls) {
+    try {
+        $wc.DownloadFile($bUrl, $destBat)
+        Write-Host " [OK] Berhasil mengunduh: $destBat" -ForegroundColor Green
+        $batSuccess = $true
+        break
+    } catch {}
+}
+if (-not $batSuccess) {
+    Write-Host " [!] Gagal mengunduh bat launcher dari semua sumber." -ForegroundColor Red
 }
 
 Write-Host "[i] Mengunduh berkas otomasi 'install-lab-software.ps1'..." -ForegroundColor Yellow
-try {
-    $wc.DownloadFile($psUrl, $destPs)
-    Write-Host " [OK] Berhasil mengunduh: $destPs" -ForegroundColor Green
-} catch {
-    Write-Host " [!] Gagal mengunduh PowerShell script: $($_.Exception.Message)" -ForegroundColor Red
+$psSuccess = $false
+foreach ($pUrl in $psUrls) {
+    try {
+        $wc.DownloadFile($pUrl, $destPs)
+        Write-Host " [OK] Berhasil mengunduh: $destPs" -ForegroundColor Green
+        $psSuccess = $true
+        break
+    } catch {}
+}
+if (-not $psSuccess) {
+    Write-Host " [!] Gagal mengunduh PowerShell script dari semua sumber." -ForegroundColor Red
 }
 $wc.Dispose()
 
