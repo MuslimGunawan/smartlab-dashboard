@@ -1,0 +1,99 @@
+<#
+==================================================================================
+SMARTLAB UNIMAL - INISIALISASI OTOMATIS STRUKTUR SOFTWARE LAB TI
+Laboratorium Terpadu Teknik Informatika — Universitas Malikussaleh
+==================================================================================
+Fungsi:
+1. Otomatis membuat struktur folder:
+   Lab_Software\
+   ├── jalankan-instalasi.bat
+   └── Apps\
+       └── install-lab-software.ps1
+2. Mengunduh launcher batch dan skrip instalasi utama versi terbaru dari GitHub resmi.
+3. Menyiapkan sistem siap pakai untuk mode offline / online.
+==================================================================================
+#>
+
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$Host.UI.RawUI.WindowTitle = "Setup Bootstrapper Software Lab TI - UNIMAL"
+
+Write-Host "`n==============================================================" -ForegroundColor Green
+Write-Host "   SETUP INISIALISASI STRUKTUR SOFTWARE LAB TI - UNIMAL       " -ForegroundColor Green
+Write-Host "==============================================================" -ForegroundColor Green
+
+# 1. Tentukan Direktori Target
+$currentDir = (Get-Location).Path
+$targetBase = $null
+
+if ((Split-Path -Leaf $currentDir) -ieq "Lab_Software") {
+    $targetBase = $currentDir
+} else {
+    $targetBase = Join-Path $currentDir "Lab_Software"
+    if (-not (Test-Path $targetBase)) {
+        New-Item -ItemType Directory -Path $targetBase -Force | Out-Null
+    }
+}
+
+$appsDir = Join-Path $targetBase "Apps"
+if (-not (Test-Path $appsDir)) {
+    New-Item -ItemType Directory -Path $appsDir -Force | Out-Null
+}
+
+Write-Host "`n[+] Folder Target Disiapkan: $targetBase" -ForegroundColor Cyan
+Write-Host "    -> $targetBase" -ForegroundColor Gray
+Write-Host "    -> $appsDir" -ForegroundColor Gray
+
+# 2. Unduh Berkas Eksekusi Utama dari GitHub Resmi SmartLab TI
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+$wc = New-Object System.Net.WebClient
+
+$batUrl = "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/jalankan-instalasi.bat"
+$psUrl  = "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/install-lab-software.ps1"
+
+$destBat = Join-Path $targetBase "jalankan-instalasi.bat"
+$destPs  = Join-Path $appsDir "install-lab-software.ps1"
+
+Write-Host "`n[i] Mengunduh berkas launcher 'jalankan-instalasi.bat'..." -ForegroundColor Yellow
+try {
+    $wc.DownloadFile($batUrl, $destBat)
+    Write-Host " [OK] Berhasil mengunduh: $destBat" -ForegroundColor Green
+} catch {
+    Write-Host " [!] Gagal mengunduh bat launcher: $($_.Exception.Message)" -ForegroundColor Red
+}
+
+Write-Host "[i] Mengunduh berkas otomasi 'install-lab-software.ps1'..." -ForegroundColor Yellow
+try {
+    $wc.DownloadFile($psUrl, $destPs)
+    Write-Host " [OK] Berhasil mengunduh: $destPs" -ForegroundColor Green
+} catch {
+    Write-Host " [!] Gagal mengunduh PowerShell script: $($_.Exception.Message)" -ForegroundColor Red
+}
+$wc.Dispose()
+
+# 3. Tampilkan Informasi Struktur Berkas
+Write-Host "`n==============================================================" -ForegroundColor Green
+Write-Host "   STRUKTUR BERKAS BERHASIL DISIAPKAN DENGAN LENGKAP         " -ForegroundColor Green
+Write-Host "==============================================================" -ForegroundColor Green
+Write-Host @"
+$targetBase\
+  |-- jalankan-instalasi.bat
+  \-- Apps\
+        \-- install-lab-software.ps1
+"@ -ForegroundColor Cyan
+
+Write-Host "`nInformasi Penting:" -ForegroundColor Yellow
+Write-Host " - Struktur folder dan 2 berkas eksekusi utama kini telah siap." -ForegroundColor Gray
+Write-Host " - Berkas master installer aplikasi (.exe/.msi) belum ada di dalam folder Apps." -ForegroundColor Gray
+Write-Host " - Saat 'jalankan-instalasi.bat' dijalankan pertama kali, skrip otomatis mengunduh" -ForegroundColor Gray
+Write-Host "   installer dan menyimpannya di folder Apps (sehingga PC berikutnya tinggal pakai offline)." -ForegroundColor Gray
+
+# 4. Opsi Langsung Menjalankan
+Write-Host ""
+$launch = Read-Host "Apakah Anda ingin langsung menjalankan instalasi sekarang? (Y/T)"
+if ($launch -match "^[yY]") {
+    Write-Host "`n[>>>] Menjalankan installer 'jalankan-instalasi.bat'..." -ForegroundColor Green
+    Start-Process -FilePath "cmd.exe" -ArgumentList ("/c `"{0}`"" -f $destBat)
+} else {
+    Write-Host "`n[i] Buka folder '$targetBase' lalu klik 2x 'jalankan-instalasi.bat' kapan saja." -ForegroundColor Cyan
+    Start-Process explorer.exe -ArgumentList "`"$targetBase`""
+}
