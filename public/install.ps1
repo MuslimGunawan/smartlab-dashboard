@@ -57,7 +57,13 @@ $psUrls  = @(
 )
 
 $destBat = Join-Path $targetBase "jalankan-instalasi.bat"
+$destVs  = Join-Path $targetBase "unduh-vs-offline.bat"
 $destPs  = Join-Path $appsDir "install-lab-software.ps1"
+
+$vsBatUrls = @(
+    "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/unduh-vs-offline.bat",
+    "https://smartlab.is-best.net/scripts/unduh-vs-offline.bat"
+)
 
 Write-Host "`n[i] Mengunduh berkas launcher 'jalankan-instalasi.bat'..." -ForegroundColor Yellow
 $batSuccess = $false
@@ -71,6 +77,15 @@ foreach ($bUrl in $batUrls) {
 }
 if (-not $batSuccess) {
     Write-Host " [!] Gagal mengunduh bat launcher dari semua sumber." -ForegroundColor Red
+}
+
+Write-Host "[i] Mengunduh berkas downloader offline 'unduh-vs-offline.bat'..." -ForegroundColor Yellow
+foreach ($vbUrl in $vsBatUrls) {
+    try {
+        $wc.DownloadFile($vbUrl, $destVs)
+        Write-Host " [OK] Berhasil mengunduh: $destVs" -ForegroundColor Green
+        break
+    } catch {}
 }
 
 Write-Host "[i] Mengunduh berkas otomasi 'install-lab-software.ps1'..." -ForegroundColor Yellow
@@ -95,6 +110,7 @@ Write-Host "==============================================================" -For
 Write-Host @"
 $targetBase\
   |-- jalankan-instalasi.bat
+  |-- unduh-vs-offline.bat
   \-- Apps\
         \-- install-lab-software.ps1
 "@ -ForegroundColor Cyan

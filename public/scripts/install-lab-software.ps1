@@ -870,6 +870,146 @@ function Setup-ComposerAndLaravel {
     }
 }
 
+# 11.1 Fungsi Setup Microsoft Visual Studio 2022 Community (Desktop C++ Offline / Online)
+function Setup-VisualStudio {
+    Write-Host "`n========================================================" -ForegroundColor Cyan
+    Write-Host "Memproses: Microsoft Visual Studio 2022 Community (C++ Dev)" -ForegroundColor Cyan
+    Write-Host "========================================================" -ForegroundColor Cyan
+
+    $vsPaths = @(
+        "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe",
+        "C:\Program Files (x86)\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe"
+    )
+    foreach ($vp in $vsPaths) {
+        if (Test-Path $vp) {
+            Write-Host "   [OK SUDAH TERPASANG] Visual Studio 2022 terdeteksi di $vp." -ForegroundColor Green
+            Write-Host "   -> Melewati proses instalasi (Skip)." -ForegroundColor DarkGray
+            return
+        }
+    }
+
+    # A. Cek Mode Offline Layout (100% Offline Tanpa Download Internet di Lab)
+    $layoutCandidates = @(
+        (Join-Path $AppsDir "vs_layout"),
+        (Join-Path $AppsDir "VS_Layout"),
+        (Join-Path $AppsDir "vs2022_layout"),
+        (Join-Path $AppsDir "VS2022"),
+        $AppsDir
+    )
+
+    $offlineLayoutDir = $null
+    $vsSetupExe = $null
+
+    foreach ($cand in $layoutCandidates) {
+        if (Test-Path $cand) {
+            $hasPackages = Test-Path (Join-Path $cand "packages")
+            $setupCandidate = Get-ChildItem -Path $cand -File -ErrorAction SilentlyContinue | Where-Object {
+                $_.Name -match "^vs_setup\.exe$" -or $_.Name -match "^vs_community.*\.exe$" -or $_.Name -match "^vs_installer.*\.exe$"
+            } | Select-Object -First 1
+
+            if ($hasPackages -and $setupCandidate) {
+                $offlineLayoutDir = $cand
+                $vsSetupExe = $setupCandidate.FullName
+                break
+            }
+        }
+    }
+
+    if ($offlineLayoutDir -and $vsSetupExe) {
+        Write-Host "   [MODE OFFLINE TERDETEKSI] Ditemukan Visual Studio Offline Layout di: $offlineLayoutDir" -ForegroundColor Green
+        Write-Host "   -> Menginstal 100% OFFLINE langsung dari Flashdisk tanpa download internet!" -ForegroundColor Cyan
+
+        # Pasang sertifikat layout secara otomatis jika ada
+        $certDir = Join-Path $offlineLayoutDir "certificates"
+        if (Test-Path $certDir) {
+            Write-Host "   [i] Memverifikasi sertifikat paket offline Visual Studio..." -ForegroundColor DarkGray
+            $certs = Get-ChildItem -Path $certDir -Filter "*.cer" -File -ErrorAction SilentlyContinue
+            foreach ($cert in $certs) {
+                & certutil -addstore -f "Root" $cert.FullName 2>$null | Out-Null
+            }
+        }
+
+        # Jalankan instalasi offline dengan --noWeb (DILARANG DOWNLOAD INTERNET, FULL DARI FLASHDISK)
+        $offlineArgs = @(
+            "--noWeb",
+            "--passive",
+            "--norestart",
+            "--add", "Microsoft.VisualStudio.Workload.NativeDesktop",
+            "--includeRecommended"
+        )
+        Write-Host "   [i] Memulai instalasi Visual Studio 2022 Desktop C++ dari flashdisk..." -ForegroundColor Yellow
+        Write-Host "       (Proses berjalan otomatis di latar belakang, mohon tunggu beberapa menit)..." -ForegroundColor Gray
+        $proc = Start-Process -FilePath $vsSetupExe -ArgumentList $offlineArgs -Wait -PassThru
+        if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
+            Write-Host "   [OK] Visual Studio 2022 Community (Desktop C++) berhasil diinstal secara OFFLINE!" -ForegroundColor Green
+            return
+        } else {
+            Write-Host "   [!] Instalasi offline selesai dengan kode: $($proc.ExitCode)" -ForegroundColor Yellow
+        }
+    }
+
+    # B. Jika belum ada paket offline layout, fallback ke installer standar atau Winget (online)
+    Write-Host "   [i] Offline layout tidak terdeteksi. Mencari installer lokal atau online..." -ForegroundColor Yellow
+    $vsArgs = "--passive --norestart --add Microsoft.VisualStudio.Workload.NativeDesktop --includeRecommended"
+    Install-AppSmart -Name "Microsoft Visual Studio 2022 Community" `
+                     -FilePattern @("*Visual*Studio*Community*.exe", "*vs*Community*.exe", "*Community*.exe", "*vs_setup*.exe", "*vs_installer*.exe") `
+                     -SilentArgs $vsArgs `
+                     -WingetId "Microsoft.VisualStudio.2022.Community" `
+                     -WingetArgs "--override `"$vsArgs`"" `
+                     -CheckPath $vsPaths
+}
+
+# 11.2 Fungsi Pembuat / Pengunduh Visual Studio Offline Layout ke Flashdisk
+function Download-VisualStudioOfflineLayout {
+    param (
+        [string]$TargetDir = (Join-Path $AppsDir "vs_layout")
+    )
+
+    Write-Host "`n==============================================================" -ForegroundColor Green
+    Write-Host "   UNDUH PAKET OFFLINE VISUAL STUDIO 2022 C++ KE FLASHDISK    " -ForegroundColor Green
+    Write-Host "==============================================================" -ForegroundColor Green
+    Write-Host "Direktori Target: $TargetDir" -ForegroundColor Cyan
+    Write-Host "Paket Workload  : Desktop Development with C++ (NativeDesktop) + Recommended" -ForegroundColor Gray
+    Write-Host "Estimasi Ukuran : ~2.5 - 3.5 GB (Dijalankan sekali di PC internet cepat)`n" -ForegroundColor Yellow
+
+    if (-not (Test-Path $AppsDir)) {
+        New-Item -ItemType Directory -Path $AppsDir -Force | Out-Null
+    }
+
+    $vsBootstrapper = Join-Path $AppsDir "vs_community.exe"
+    if (-not (Test-Path $vsBootstrapper)) {
+        Write-Host "[i] Mengunduh bootstrapper resmi Microsoft vs_community.exe..." -ForegroundColor Yellow
+        try {
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+            $wc = New-Object System.Net.WebClient
+            $wc.DownloadFile("https://aka.ms/vs/17/release/vs_community.exe", $vsBootstrapper)
+            $wc.Dispose()
+            Write-Host "[OK] Bootstrapper berhasil diunduh!" -ForegroundColor Green
+        } catch {
+            Write-Host "[!] Gagal mengunduh vs_community.exe: $($_.Exception.Message)" -ForegroundColor Red
+            return
+        }
+    }
+
+    Write-Host "[>>>] Memulai pengunduhan Offline Layout Visual Studio 2022..." -ForegroundColor Cyan
+    Write-Host "      (Jendela installer Microsoft akan muncul menampilkan progres unduhan paket offline)...`n" -ForegroundColor DarkGray
+
+    $layoutArgs = @(
+        "--layout", "`"$TargetDir`"",
+        "--add", "Microsoft.VisualStudio.Workload.NativeDesktop",
+        "--includeRecommended",
+        "--lang", "en-US"
+    )
+
+    $proc = Start-Process -FilePath $vsBootstrapper -ArgumentList ($layoutArgs -join " ") -Wait -PassThru
+    if ($proc.ExitCode -eq 0) {
+        Write-Host "`n[OK] Paket Offline Visual Studio 2022 C++ berhasil diunduh lengkap ke: $TargetDir" -ForegroundColor Green
+        Write-Host "     Flashdisk Anda sekarang siap digunakan untuk menginstal C++ secara OFFLINE di seluruh PC Lab!" -ForegroundColor Cyan
+    } else {
+        Write-Host "`n[!] Pembuatan layout offline selesai dengan kode: $($proc.ExitCode)" -ForegroundColor Yellow
+    }
+}
+
 # 12. Verifikasi Status Seluruh Software & Web Stack
 function Test-LabSoftwareStatus {
     Write-Host "`n========================================================" -ForegroundColor Cyan
@@ -1064,14 +1204,8 @@ function Run-FullInstallation {
     # 8. QGIS Desktop (Otomatis Silent)
     Install-AppSmart -Name "QGIS Desktop" -FilePattern "*QGIS*.msi" -SilentArgs "/qn" -WingetId "OSGeo.QGIS" -CheckPath "C:\Program Files\QGIS *\bin\qgis-bin.exe"
 
-    # 9. Microsoft Visual Studio 2022 Community (Desktop development with C++ Workload)
-    $vsArgs = "--passive --norestart --add Microsoft.VisualStudio.Workload.NativeDesktop --includeRecommended"
-    Install-AppSmart -Name "Microsoft Visual Studio 2022 Community" `
-                     -FilePattern @("*Visual*Studio*Community*.exe", "*vs*Community*.exe", "*Community*.exe", "*vs_setup*.exe", "*vs_installer*.exe") `
-                     -SilentArgs $vsArgs `
-                     -WingetId "Microsoft.VisualStudio.2022.Community" `
-                     -WingetArgs "--override `"$vsArgs`"" `
-                     -CheckPath @("C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe", "C:\Program Files (x86)\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe")
+    # 9. Microsoft Visual Studio 2022 Community (Desktop development with C++ Workload - Support 100% Offline Layout)
+    Setup-VisualStudio
 
     # 10. Arduino IDE (Arduino Uno, Nano, Mega, IoT)
     Install-AppSmart -Name "Arduino IDE" `
@@ -1115,9 +1249,10 @@ while ($running) {
     Write-Host "`nPilihan Tindakan:" -ForegroundColor Yellow
     Write-Host " [1] Jalankan Otomasi Lengkap Lab (Smart-Skip: Lewati yang sudah ada, pasang yang belum)"
     Write-Host " [2] Verifikasi Status & Peta Port Software Lab"
-    Write-Host " [3] Keluar`n"
+    Write-Host " [3] Unduh Paket Offline Visual Studio C++ ke Flashdisk (Dijalankan sekali di PC internet cepat)"
+    Write-Host " [4] Keluar`n"
 
-    $choice = Read-Host "Masukkan pilihan Anda (1/2/3)"
+    $choice = Read-Host "Masukkan pilihan Anda (1/2/3/4)"
 
     switch ($choice) {
         "1" {
@@ -1132,11 +1267,17 @@ while ($running) {
             try { $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") } catch { Read-Host }
         }
         "3" {
+            Clear-Host
+            Download-VisualStudioOfflineLayout
+            Write-Host "`n[Tekan Enter atau sembarang tombol untuk kembali ke Menu Utama...]" -ForegroundColor Cyan
+            try { $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") } catch { Read-Host }
+        }
+        "4" {
             Write-Host "`nKeluar dari skrip otomasi. Terima kasih." -ForegroundColor Gray
             $running = $false
         }
         default {
-            Write-Host "Pilihan tidak valid. Silakan ketik angka 1, 2, atau 3." -ForegroundColor Red
+            Write-Host "Pilihan tidak valid. Silakan ketik angka 1, 2, 3, atau 4." -ForegroundColor Red
             Start-Sleep -Seconds 1
         }
     }
