@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions
-title Installer Otomatis Software Lab TI - UNIMAL
+title Installer Otomatis Software Lab TI - UNIMAL [v3.0.0]
 color 0A
 
 :: 1. Pindah ke direktori tempat file BAT ini berada
@@ -35,6 +35,7 @@ cls
 echo.
 echo ============================================================
 echo   INSTALLER OTOMASI STANDARISASI SOFTWARE LAB TI - UNIMAL
+echo   Versi: 3.0.0 (Update 02 Oktober 2026)
 echo ============================================================
 echo.
 echo Folder kerja: %CD%

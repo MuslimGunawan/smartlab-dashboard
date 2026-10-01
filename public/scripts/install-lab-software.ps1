@@ -25,8 +25,9 @@
 #  16. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
+$SCRIPT_CURRENT_VERSION = "3.0.0"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$Host.UI.RawUI.WindowTitle = "Installer Otomatis 16 Software Lab TI Unimal"
+$Host.UI.RawUI.WindowTitle = "Installer Otomatis 16 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
 # 1. Pastikan script berjalan sebagai Administrator
 function Test-Administrator {
@@ -100,6 +101,7 @@ if (-not $AppsDir) {
 
 Write-Host "==============================================================================" -ForegroundColor Green
 Write-Host "      OTOMASI STANDARISASI SOFTWARE LABORATORIUM KOMPUTER TI UNIMAL          " -ForegroundColor Green
+Write-Host "                  [ VERSI $SCRIPT_CURRENT_VERSION - RILIS 02 OKTOBER 2026 ]                   " -ForegroundColor Yellow
 Write-Host "==============================================================================" -ForegroundColor Green
 if (Test-Path $AppsDir) {
     Write-Host "[OK] Direktori Master Installer: $AppsDir" -ForegroundColor Green
@@ -112,7 +114,6 @@ if (Test-Path $AppsDir) {
 Write-Host "------------------------------------------------------------------------------`n"
 
 # 2.1 Cek Pembaruan Script Otomatis dari Cloud SmartLab (GitHub / Web Dashboard)
-$SCRIPT_CURRENT_VERSION = "2.5.0"
 
 function Check-ScriptSelfUpdate {
     $scriptFile = $PSCommandPath
@@ -206,6 +207,46 @@ function Convert-ArgsToArray([string]$arguments) {
     return $list
 }
 
+# 4.2. Helper Pembuat Shortcut Desktop & Start Menu (Agar Aplikasi Muncul di Pencarian Windows)
+function Create-AppShortcut {
+    param (
+        [string]$TargetExe,
+        [string]$ShortcutName,
+        [string]$WorkingDir = "",
+        [string]$Arguments = ""
+    )
+    if (-not (Test-Path $TargetExe)) { return }
+    if ([string]::IsNullOrWhiteSpace($WorkingDir)) {
+        $WorkingDir = Split-Path -Parent $TargetExe
+    }
+
+    try {
+        $wsh = New-Object -ComObject WScript.Shell
+
+        # 1. Desktop Publik (Muncul di layar desktop semua mahasiswa/dosen)
+        $publicDesktop = [Environment]::GetFolderPath("CommonDesktopDirectory")
+        if (Test-Path $publicDesktop) {
+            $lnk1 = Join-Path $publicDesktop "$ShortcutName.lnk"
+            $sc1 = $wsh.CreateShortcut($lnk1)
+            $sc1.TargetPath = $TargetExe
+            $sc1.WorkingDirectory = $WorkingDir
+            if ($Arguments) { $sc1.Arguments = $Arguments }
+            $sc1.Save()
+        }
+
+        # 2. Start Menu Program Publik (Muncul saat Windows Search / Start Menu diketik)
+        $commonPrograms = [Environment]::GetFolderPath("CommonPrograms")
+        if (Test-Path $commonPrograms) {
+            $lnk2 = Join-Path $commonPrograms "$ShortcutName.lnk"
+            $sc2 = $wsh.CreateShortcut($lnk2)
+            $sc2.TargetPath = $TargetExe
+            $sc2.WorkingDirectory = $WorkingDir
+            if ($Arguments) { $sc2.Arguments = $Arguments }
+            $sc2.Save()
+        }
+    } catch {}
+}
+
 # 5. Fungsi Cerdas Install (Offline Folder Apps -> Fallback Winget Online)
 function Install-AppSmart {
     param (
@@ -236,17 +277,18 @@ function Install-AppSmart {
         }
         if ($alreadyInstalled) {
             Write-Host "   [OK SUDAH TERPASANG] $Name terdeteksi di $($alreadyInstalled.FullName)" -ForegroundColor Green
+            Create-AppShortcut -TargetExe $alreadyInstalled.FullName -ShortcutName $Name
             Write-Host "   -> Melewati proses instalasi (Skip)." -ForegroundColor DarkGray
             return
         }
     }
 
-    # A. Cek apakah ada file offline di folder Apps/
+    # A. Cek apakah ada file offline di folder Apps/ (Pencarian Rekursif ke Seluruh Subfolder)
     if (Test-Path $AppsDir) {
         $offlineFile = $null
         $patterns = @($FilePattern)
         foreach ($pat in $patterns) {
-            $offlineFile = Get-ChildItem -Path $AppsDir -Filter $pat -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            $offlineFile = Get-ChildItem -Path $AppsDir -Filter $pat -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($offlineFile) { break }
         }
 
@@ -289,6 +331,12 @@ function Install-AppSmart {
                 # Kode 0 = Sukses, 3010 = Sukses (Butuh restart), 1641 = Sukses reboot, 1223 = Elevated/UAC Success, 1638 = Versi sudah ada
                 if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010 -or $proc.ExitCode -eq 1641 -or $proc.ExitCode -eq 1223 -or $proc.ExitCode -eq 1638) {
                     Write-Host "[OK] Berhasil menginstal $Name dari folder Apps!" -ForegroundColor Green
+                    if ($CheckPath) {
+                        foreach ($cp in @($CheckPath)) {
+                            $f = Get-ChildItem -Path $cp -File -ErrorAction SilentlyContinue | Select-Object -First 1
+                            if ($f) { Create-AppShortcut -TargetExe $f.FullName -ShortcutName $Name; break }
+                        }
+                    }
                     return
                 } else {
                     Write-Host "[!] Installer offline selesai dengan kode exit: $($proc.ExitCode)" -ForegroundColor Yellow
@@ -333,6 +381,12 @@ function Install-AppSmart {
             }
             if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010 -or $proc.ExitCode -eq 1641 -or $proc.ExitCode -eq 1223 -or $proc.ExitCode -eq 1638) {
                 Write-Host "[OK] Berhasil menginstal $Name!" -ForegroundColor Green
+                if ($CheckPath) {
+                    foreach ($cp in @($CheckPath)) {
+                        $f = Get-ChildItem -Path $cp -File -ErrorAction SilentlyContinue | Select-Object -First 1
+                        if ($f) { Create-AppShortcut -TargetExe $f.FullName -ShortcutName $Name; break }
+                    }
+                }
                 return
             }
         } catch {
@@ -358,7 +412,7 @@ function Install-AppSmart {
             $patterns = @($FilePattern)
             $newOfflineFile = $null
             foreach ($pat in $patterns) {
-                $newOfflineFile = Get-ChildItem -Path $AppsDir -Filter $pat -File -ErrorAction SilentlyContinue | Select-Object -First 1
+                $newOfflineFile = Get-ChildItem -Path $AppsDir -Filter $pat -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
                 if ($newOfflineFile) { break }
             }
             if ($newOfflineFile) {
@@ -384,6 +438,12 @@ function Install-AppSmart {
                 }
                 if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010 -or $proc.ExitCode -eq 1641 -or $proc.ExitCode -eq 1223 -or $proc.ExitCode -eq 1638) {
                     Write-Host "[OK] Berhasil menginstal $Name!" -ForegroundColor Green
+                    if ($CheckPath) {
+                        foreach ($cp in @($CheckPath)) {
+                            $f = Get-ChildItem -Path $cp -File -ErrorAction SilentlyContinue | Select-Object -First 1
+                            if ($f) { Create-AppShortcut -TargetExe $f.FullName -ShortcutName $Name; break }
+                        }
+                    }
                     return
                 }
             }
@@ -481,29 +541,29 @@ function Setup-LaragonStack {
         Write-Host "   [OK SUDAH TERPASANG] Laragon terdeteksi di $laragonExe." -ForegroundColor Green
         Write-Host "   -> Melewati proses instalasi dasar Laragon." -ForegroundColor DarkGray
     } else {
-        # 1. Cari file installer offline Laragon di AppsDir
-        $laragonInstaller = Get-ChildItem -Path $AppsDir -File -ErrorAction SilentlyContinue | Where-Object {
-            $_.Name -match "^laragon.*\.exe$" -or $_.Name -match "laragon-wamp.*\.exe"
-        } | Select-Object -First 1
+        # 1. Cari file installer offline Laragon di AppsDir (Pencarian Rekursif)
+        $laragonInstaller = Get-ChildItem -Path $AppsDir -Filter "*laragon*.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 
         if (-not $laragonInstaller) {
             Write-Host "   [i] File offline Laragon belum ada di Apps. Mengunduh installer resmi..." -ForegroundColor Yellow
+            
+            # Coba unduh langsung dari GitHub Releases CDN resmi (sangat cepat & stabil)
             try {
-                winget download --id "LeNgocKhoa.Laragon" --source winget -d "$AppsDir" --accept-package-agreements --accept-source-agreements --disable-interactivity
-                $laragonInstaller = Get-ChildItem -Path $AppsDir -File -ErrorAction SilentlyContinue | Where-Object {
-                    $_.Name -match "^laragon.*\.exe$" -or $_.Name -match "laragon-wamp.*\.exe"
-                } | Select-Object -First 1
+                $downUrl = "https://github.com/leokhoa/laragon/releases/download/6.0.0/laragon-wamp.exe"
+                $destExe = Join-Path $AppsDir "laragon-wamp-setup-6.0.0.exe"
+                Write-Host "   [i] Mengunduh Laragon WAMP dari GitHub CDN..." -ForegroundColor Yellow
+                [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+                $wc = New-Object System.Net.WebClient
+                $wc.DownloadFile($downUrl, $destExe)
+                $wc.Dispose()
+                $laragonInstaller = Get-Item $destExe -ErrorAction SilentlyContinue
+                Write-Host "   [OK] Installer Laragon berhasil diunduh dan disimpan di folder Apps/!" -ForegroundColor Green
             } catch {}
 
             if (-not $laragonInstaller) {
                 try {
-                    $downUrl = "https://github.com/leokhoa/laragon/releases/download/8.7.0/laragon-wamp.exe"
-                    $destExe = Join-Path $AppsDir "laragon-wamp.exe"
-                    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-                    $wc = New-Object System.Net.WebClient
-                    $wc.DownloadFile($downUrl, $destExe)
-                    $wc.Dispose()
-                    $laragonInstaller = Get-Item $destExe -ErrorAction SilentlyContinue
+                    winget download --id "LeNgocKhoa.Laragon" --source winget -d "$AppsDir" --accept-package-agreements --accept-source-agreements --disable-interactivity
+                    $laragonInstaller = Get-ChildItem -Path $AppsDir -Filter "*laragon*.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
                 } catch {}
             }
         }
@@ -516,8 +576,8 @@ function Setup-LaragonStack {
             Get-Process -Name "laragon", "httpd", "mysqld" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
             Start-Sleep -Milliseconds 500
 
-            # Argumen Inno Setup standar
-            $laragonArgs = @("/VERYSILENT", "/NORESTART", "/SP-", "/SUPPRESSMSGBOXES", "/MERGETASKS=!runlaragon,!desktopicon", "/DIR=C:\laragon")
+            # Argumen Inno Setup standar (Universal & Bebas Error /VERYSILENT)
+            $laragonArgs = @("/VERYSILENT", "/NORESTART", "/SP-", "/SUPPRESSMSGBOXES", "/DIR=C:\laragon")
             $p = Start-Process -FilePath $laragonInstaller.FullName -ArgumentList $laragonArgs -PassThru
 
             # Watchdog loop: Laragon Inno Setup terkadang menjalankan laragon.exe dengan argumen setup di akhir instalasi,
@@ -536,18 +596,38 @@ function Setup-LaragonStack {
 
             # Pembersihan akhir proses laragon jika masih tertinggal
             Get-Process -Name "laragon" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-
-            if (Test-Path $laragonExe) {
-                Write-Host "   [OK] Berhasil menginstal Laragon resmi di $targetLaragon!" -ForegroundColor Green
-            } else {
-                Write-Host "   [!] Instalasi Laragon selesai dengan status kode: $($p.ExitCode)" -ForegroundColor Yellow
-            }
         } else {
             # Fallback winget install langsung jika file installer tidak ditemukan
             Write-Host "   [i] Mencoba direct install Laragon via Winget..." -ForegroundColor Yellow
             $cmd = "winget install --id `"LeNgocKhoa.Laragon`" --source winget -e --silent --accept-source-agreements --accept-package-agreements --disable-interactivity"
             Invoke-Expression $cmd
             Get-Process -Name "laragon" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        }
+
+        # Verifikasi fisik keberadaan laragon.exe di disk
+        if (-not (Test-Path $laragonExe)) {
+            Write-Host "   [!] File laragon.exe belum ditemukan di $targetLaragon setelah proses silent." -ForegroundColor Yellow
+            Write-Host "   [i] Menjalankan installer Laragon langsung untuk memastikan ekstraksi berkas selesai..." -ForegroundColor Yellow
+            if ($laragonInstaller) {
+                Start-Process -FilePath $laragonInstaller.FullName -ArgumentList "/DIR=C:\laragon /SUPPRESSMSGBOXES" -Wait
+            } else {
+                winget install --id "LeNgocKhoa.Laragon" --source winget -e --accept-package-agreements --accept-source-agreements --disable-interactivity
+            }
+            Get-Process -Name "laragon" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        }
+
+        if (Test-Path $laragonExe) {
+            Write-Host "   [OK] Berhasil menginstal Laragon resmi di $targetLaragon!" -ForegroundColor Green
+            Create-AppShortcut -TargetExe $laragonExe -ShortcutName "Laragon" -WorkingDir "C:\laragon"
+            try {
+                $regKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\laragon.exe"
+                if (-not (Test-Path $regKey)) { New-Item -Path $regKey -Force | Out-Null }
+                Set-ItemProperty -Path $regKey -Name "(Default)" -Value $laragonExe -Force
+                Set-ItemProperty -Path $regKey -Name "Path" -Value "C:\laragon" -Force
+                Write-Host "   [OK] Shortcut Start Menu, Desktop & App Paths Laragon siap!" -ForegroundColor Green
+            } catch {}
+        } else {
+            Write-Host "   [!] Peringatan: File $laragonExe belum terbentuk di disk. Pastikan installer tidak diblokir Windows Defender." -ForegroundColor Red
         }
     }
 
@@ -982,7 +1062,7 @@ function Setup-VisualStudio {
 # 12. Verifikasi Status Seluruh Software & Web Stack
 function Test-LabSoftwareStatus {
     Write-Host "`n========================================================" -ForegroundColor Cyan
-    Write-Host "STATUS VERIFIKASI SELURUH SOFTWARE & WEB STACK LAB TI" -ForegroundColor Cyan
+    Write-Host "STATUS VERIFIKASI SOFTWARE & WEB STACK LAB TI [v$SCRIPT_CURRENT_VERSION]" -ForegroundColor Cyan
     Write-Host "========================================================" -ForegroundColor Cyan
 
     $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
@@ -1048,18 +1128,28 @@ function Test-LabSoftwareStatus {
     }
 
     $guiApps = @(
-        @{ Name = "Delphi (RAD Studio)"; Path = @("C:\Program Files*\Embarcadero\Studio\*\bin\bds.exe", "C:\Program Files (x86)\Embarcadero\Studio\*\bin\bds.exe") },
-        @{ Name = "Cisco Packet Tracer"; Path = @("C:\Program Files\Cisco Packet Tracer *\bin\PacketTracer.exe", "C:\Program Files (x86)\Cisco Packet Tracer *\bin\PacketTracer.exe") },
-        @{ Name = "Visual Studio 2022";  Path = @("C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe", "C:\Program Files (x86)\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe") },
-        @{ Name = "Proteus Design Suite";Path = @("C:\Program Files*\Labcenter Electronics\Proteus *\BIN\PDS.EXE", "C:\Program Files (x86)\Labcenter Electronics\Proteus *\BIN\PDS.EXE") },
-        @{ Name = "Android Studio";      Path = @("C:\Program Files\Android\Android Studio\bin\studio64.exe", "C:\Program Files (x86)\Android\Android Studio\bin\studio64.exe", "$env:LOCALAPPDATA\Programs\Android\Android Studio\bin\studio64.exe") },
-        @{ Name = "Oracle VirtualBox";   Path = @("C:\Program Files\Oracle\VirtualBox\VirtualBox.exe", "C:\Program Files (x86)\Oracle\VirtualBox\VirtualBox.exe") },
-        @{ Name = "Apache NetBeans";     Path = @("C:\Program Files\*NetBeans*\bin\netbeans*.exe", "C:\Program Files (x86)\*NetBeans*\bin\netbeans*.exe") },
-        @{ Name = "QGIS Desktop";        Path = @("C:\Program Files\QGIS *\bin\qgis-bin.exe", "C:\Program Files\QGIS *\bin\qgis.exe") },
-        @{ Name = "Arduino IDE";         Path = @("C:\Program Files\Arduino IDE\Arduino IDE.exe", "$env:LOCALAPPDATA\Programs\Arduino IDE\Arduino IDE.exe", "C:\Program Files (x86)\Arduino\arduino.exe", "C:\Program Files\Arduino\arduino.exe") },
-        @{ Name = "Laragon";             Path = @("C:\laragon\laragon.exe", "D:\laragon\laragon.exe", "E:\laragon\laragon.exe") },
-        @{ Name = "XAMPP";               Path = @("C:\xampp\xampp-control.exe", "D:\xampp\xampp-control.exe") }
+        @{ Name = "Delphi (RAD Studio)"; Path = @("C:\Program Files*\Embarcadero\Studio\*\bin\bds.exe", "C:\Program Files (x86)\Embarcadero\Studio\*\bin\bds.exe"); Reg = "*Delphi*" },
+        @{ Name = "Cisco Packet Tracer"; Path = @("C:\Program Files\Cisco Packet Tracer *\bin\PacketTracer.exe", "C:\Program Files (x86)\Cisco Packet Tracer *\bin\PacketTracer.exe"); Reg = "*Packet Tracer*" },
+        @{ Name = "Visual Studio 2022";  Path = @("C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe", "C:\Program Files (x86)\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe"); Reg = "*Visual Studio*" },
+        @{ Name = "Proteus Design Suite";Path = @("C:\Program Files*\Labcenter Electronics\Proteus *\BIN\PDS.EXE", "C:\Program Files (x86)\Labcenter Electronics\Proteus *\BIN\PDS.EXE"); Reg = "*Proteus*" },
+        @{ Name = "Android Studio";      Path = @("C:\Program Files\Android\Android Studio\bin\studio64.exe", "C:\Program Files (x86)\Android\Android Studio\bin\studio64.exe", "C:\Users\*\AppData\Local\Programs\Android\Android Studio\bin\studio64.exe"); Reg = "*Android Studio*" },
+        @{ Name = "Oracle VirtualBox";   Path = @("C:\Program Files\Oracle\VirtualBox\VirtualBox.exe", "C:\Program Files (x86)\Oracle\VirtualBox\VirtualBox.exe"); Reg = "*VirtualBox*" },
+        @{ Name = "Apache NetBeans";     Path = @("C:\Program Files\*NetBeans*\netbeans\bin\netbeans*.exe", "C:\Program Files\*NetBeans*\bin\netbeans*.exe", "C:\Program Files\Apache NetBeans*\bin\netbeans*.exe", "C:\Program Files (x86)\*NetBeans*\netbeans\bin\netbeans*.exe", "C:\Program Files (x86)\*NetBeans*\bin\netbeans*.exe"); Reg = "*NetBeans*" },
+        @{ Name = "QGIS Desktop";        Path = @("C:\Program Files\QGIS *\bin\qgis-bin.exe", "C:\Program Files\QGIS *\bin\qgis.exe"); Reg = "*QGIS*" },
+        @{ Name = "Arduino IDE";         Path = @("C:\Program Files\Arduino IDE\Arduino IDE.exe", "C:\Program Files\Arduino\arduino.exe", "C:\Users\*\AppData\Local\Programs\Arduino IDE\Arduino IDE.exe", "C:\Users\*\AppData\Local\Arduino*\arduino*.exe", "C:\Program Files (x86)\Arduino\arduino.exe"); Reg = "*Arduino*" },
+        @{ Name = "Laragon";             Path = @("C:\laragon\laragon.exe", "D:\laragon\laragon.exe", "E:\laragon\laragon.exe"); Reg = "*Laragon*" },
+        @{ Name = "XAMPP";               Path = @("C:\xampp\xampp-control.exe", "D:\xampp\xampp-control.exe"); Reg = "*XAMPP*" }
     )
+
+    # Cache aplikasi terdaftar di Registry Windows Uninstall
+    $installedRegs = @()
+    try {
+        $regKeys = @(
+            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+        )
+        $installedRegs = Get-ItemProperty $regKeys -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName }
+    } catch {}
 
     Write-Host "`nSoftware Desktop & GUI Terpasang:" -ForegroundColor Cyan
     foreach ($gui in $guiApps) {
@@ -1070,12 +1160,33 @@ function Test-LabSoftwareStatus {
             if (-not $f) {
                 $f = Get-Item -Path $p -ErrorAction SilentlyContinue | Select-Object -First 1
             }
-            if ($f) { $found = $f; break }
+            if ($f) { $found = $f.FullName; break }
+        }
+
+        # Fallback Cerdas: Jika path spesifik belum cocok, periksa Windows Registry Uninstall
+        if (-not $found -and $gui.Reg) {
+            $matchReg = $installedRegs | Where-Object { $_.DisplayName -like $gui.Reg } | Select-Object -First 1
+            if ($matchReg) {
+                if ($matchReg.InstallLocation -and (Test-Path $matchReg.InstallLocation)) {
+                    $found = "$($matchReg.InstallLocation) ($($matchReg.DisplayName))"
+                } else {
+                    $found = "$($matchReg.DisplayName) ($($matchReg.DisplayVersion))"
+                }
+            }
+        }
+
+        # Fallback Tambahan: Periksa Shortcut di Start Menu Publik & User
+        if (-not $found) {
+            $firstWord = $gui.Name.Split(' ')[0]
+            $lnk = Get-ChildItem -Path "C:\ProgramData\Microsoft\Windows\Start Menu\Programs", "C:\Users\*\AppData\Roaming\Microsoft\Windows\Start Menu\Programs" -Filter "*$firstWord*.lnk" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($lnk) {
+                $found = "Tersedia di Menu Start ($($lnk.Name))"
+            }
         }
 
         Write-Host -NoNewline ("- {0,-22}: " -f $gui.Name)
         if ($found) {
-            Write-Host "Terpasang ($($found.FullName))" -ForegroundColor Green
+            Write-Host "Terpasang ($found)" -ForegroundColor Green
         } else {
             Write-Host "Belum Terdeteksi di Path Standar" -ForegroundColor Gray
         }
@@ -1114,7 +1225,12 @@ function Run-FullInstallation {
     Setup-NodeJS
 
     # 5. Oracle VM VirtualBox (Otomatis Silent)
-    Install-AppSmart -Name "Oracle VM VirtualBox" -FilePattern "*VirtualBox*.exe" -SilentArgs "--silent" -WingetId "Oracle.VirtualBox" -CheckPath "C:\Program Files\Oracle\VirtualBox\VirtualBox.exe"
+    Install-AppSmart -Name "Oracle VM VirtualBox" `
+                     -FilePattern @("*VirtualBox*.exe", "*VirtualBox*.msi") `
+                     -DownloadUrl "https://download.virtualbox.org/virtualbox/7.1.6/VirtualBox-7.1.6-167084-Win.exe" `
+                     -SilentArgs "--silent" `
+                     -WingetId "Oracle.VirtualBox" `
+                     -CheckPath @("C:\Program Files\Oracle\VirtualBox\VirtualBox.exe", "C:\Program Files (x86)\Oracle\VirtualBox\VirtualBox.exe")
 
     # 6. Apache NetBeans (Otomatis Silent dengan Java JDK 17+ Terdeteksi)
     $nbJdkPath = $null
@@ -1144,14 +1260,15 @@ function Run-FullInstallation {
 
     Install-AppSmart -Name "Apache NetBeans IDE" `
                      -FilePattern @("*NetBeans*.exe", "*Apache-NetBeans*.exe") `
+                     -DownloadUrl "https://github.com/apache/netbeans/releases/download/25/Apache-NetBeans-25-bin-windows-x64.exe" `
                      -SilentArgs $nbSilentArgs `
                      -WingetId "Apache.NetBeans" `
                      -WingetArgs "--override `"$nbSilentArgs`"" `
-                     -CheckPath @("C:\Program Files\*NetBeans*\bin\netbeans*.exe", "C:\Program Files (x86)\*NetBeans*\bin\netbeans*.exe")
+                     -CheckPath @("C:\Program Files\*NetBeans*\netbeans\bin\netbeans*.exe", "C:\Program Files\*NetBeans*\bin\netbeans*.exe", "C:\Program Files\Apache NetBeans*\bin\netbeans*.exe", "C:\Program Files (x86)\*NetBeans*\netbeans\bin\netbeans*.exe", "C:\Program Files (x86)\*NetBeans*\bin\netbeans*.exe")
 
     # Kunci path netbeans_jdkhome di netbeans.conf agar tidak memunculkan popup Java saat dibuka
     if ($nbJdkPath) {
-        $nbConfs = Get-ChildItem -Path "C:\Program Files\*NetBeans*\etc\netbeans.conf" -File -ErrorAction SilentlyContinue
+        $nbConfs = Get-ChildItem -Path "C:\Program Files\*NetBeans*\etc\netbeans.conf" -File -Recurse -ErrorAction SilentlyContinue
         foreach ($cfg in $nbConfs) {
             try {
                 $cfgText = [System.IO.File]::ReadAllText($cfg.FullName)
@@ -1178,10 +1295,11 @@ function Run-FullInstallation {
 
     # 10. Arduino IDE (Arduino Uno, Nano, Mega, IoT)
     Install-AppSmart -Name "Arduino IDE" `
-                     -FilePattern "*arduino*.msi" `
+                     -FilePattern @("*arduino*.msi", "*arduino*.exe") `
+                     -DownloadUrl "https://github.com/arduino/arduino-ide/releases/download/2.3.10/arduino-ide_2.3.10_Windows_64bit.msi" `
                      -SilentArgs "/qn ALLUSERS=1" `
                      -WingetId "ArduinoSA.IDE.stable" `
-                     -CheckPath @("C:\Program Files\Arduino IDE\Arduino IDE.exe", "$env:LOCALAPPDATA\Programs\Arduino IDE\Arduino IDE.exe", "C:\Program Files (x86)\Arduino\arduino.exe", "C:\Program Files\Arduino\arduino.exe")
+                     -CheckPath @("C:\Program Files\Arduino IDE\Arduino IDE.exe", "C:\Program Files\Arduino\arduino.exe", "C:\Users\*\AppData\Local\Programs\Arduino IDE\Arduino IDE.exe", "C:\Users\*\AppData\Local\Arduino*\arduino*.exe", "C:\Program Files (x86)\Arduino\arduino.exe")
 
     # 11. Laragon (Installer Resmi 6.0.0 + Auto-Overlay Stack Custom)
     Setup-LaragonStack
@@ -1213,7 +1331,8 @@ $running = $true
 while ($running) {
     Clear-Host
     Write-Host "==============================================================" -ForegroundColor Cyan
-    Write-Host "   OTOMASI STANDARISASI SOFTWARE LAB TI - UNIMAL" -ForegroundColor Cyan
+    Write-Host "   OTOMASI STANDARISASI SOFTWARE LAB TI - UNIMAL" -ForegroundColor Green
+    Write-Host "   [ Versi $SCRIPT_CURRENT_VERSION - Rilis 02 Oktober 2026 ]" -ForegroundColor Yellow
     Write-Host "==============================================================" -ForegroundColor Cyan
     Write-Host "`nPilihan Tindakan:" -ForegroundColor Yellow
     Write-Host " [1] Jalankan Otomasi Lengkap Lab (Smart-Skip & Auto-Cache C++ Offline)"

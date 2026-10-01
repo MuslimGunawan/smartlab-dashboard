@@ -14,11 +14,13 @@ Fungsi:
 ==================================================================================
 #>
 
+$SETUP_VERSION = "3.0.0"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$Host.UI.RawUI.WindowTitle = "Setup Bootstrapper Software Lab TI - UNIMAL"
+$Host.UI.RawUI.WindowTitle = "Setup Bootstrapper Software Lab TI - UNIMAL [v$SETUP_VERSION]"
 
 Write-Host "`n==============================================================" -ForegroundColor Green
 Write-Host "   SETUP INISIALISASI STRUKTUR SOFTWARE LAB TI - UNIMAL       " -ForegroundColor Green
+Write-Host "            [ VERSI $SETUP_VERSION - RILIS 02 OKTOBER 2026 ]           " -ForegroundColor Yellow
 Write-Host "==============================================================" -ForegroundColor Green
 
 # 1. Tentukan Direktori Target
