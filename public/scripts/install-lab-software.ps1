@@ -25,7 +25,7 @@
 #  16. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.1.0"
+$SCRIPT_CURRENT_VERSION = "3.1.1"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 16 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -338,6 +338,82 @@ function Create-AppShortcut {
     } catch {}
 }
 
+# 4.3. High-Speed Multi-Mirror Downloader dengan Visual Live Progress
+function Download-FileWithFastMirrors {
+    param (
+        [object]$Urls,
+        [string]$DestinationPath,
+        [string]$ActivityTitle = "Mengunduh Berkas"
+    )
+
+    $urlList = @($Urls)
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+
+    $parentDir = Split-Path -Parent $DestinationPath
+    if (-not (Test-Path $parentDir)) { New-Item -ItemType Directory -Path $parentDir -Force | Out-Null }
+
+    foreach ($url in $urlList) {
+        if ([string]::IsNullOrWhiteSpace($url)) { continue }
+        $cleanHost = ($url -split '/')[2]
+        Write-Host "   -> Mencoba server unduh: $cleanHost ..." -ForegroundColor DarkCyan
+
+        $targetFile = $null
+        $responseStream = $null
+        $response = $null
+        try {
+            $request = [System.Net.HttpWebRequest]::Create($url)
+            $request.Timeout = 15000
+            $request.ReadWriteTimeout = 60000
+            $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            $response = $request.GetResponse()
+            $totalBytes = $response.ContentLength
+            $responseStream = $response.GetResponseStream()
+
+            $targetFile = New-Object System.IO.FileStream($DestinationPath, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+            $buffer = New-Object byte[] 65536
+            $downloadedBytes = 0
+            $sw = [System.Diagnostics.Stopwatch]::StartNew()
+            $lastReport = [System.Diagnostics.Stopwatch]::StartNew()
+
+            while (($bytesRead = $responseStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                $targetFile.Write($buffer, 0, $bytesRead)
+                $downloadedBytes += $bytesRead
+
+                if ($lastReport.ElapsedMilliseconds -gt 300) {
+                    Invoke-LabKeepAlive
+                    $percent = if ($totalBytes -gt 0) { [math]::Min(100, [int](($downloadedBytes / $totalBytes) * 100)) } else { 0 }
+                    $speedKBps = if ($sw.Elapsed.TotalSeconds -gt 0) { [math]::Round(($downloadedBytes / 1024) / $sw.Elapsed.TotalSeconds, 1) } else { 0 }
+                    $speedMBps = [math]::Round($speedKBps / 1024, 2)
+                    $mbDownloaded = [math]::Round($downloadedBytes / 1MB, 2)
+                    $mbTotal = if ($totalBytes -gt 0) { [math]::Round($totalBytes / 1MB, 2) } else { 0 }
+
+                    $barLength = 20
+                    $completedBars = [int]($percent / (100 / $barLength))
+                    $remainingBars = $barLength - $completedBars
+                    $barStr = ("#" * $completedBars) + ("-" * $remainingBars)
+
+                    Write-Progress -Activity "$ActivityTitle" -Status "[$barStr] $percent% ($mbDownloaded MB / $mbTotal MB) @ $speedMBps MB/s" -PercentComplete $percent
+                    $lastReport.Restart()
+                }
+            }
+
+            Write-Progress -Activity "$ActivityTitle" -Completed
+            $targetFile.Close()
+            $responseStream.Close()
+            $response.Close()
+            return $true
+        } catch {
+            Write-Progress -Activity "$ActivityTitle" -Completed
+            if ($targetFile) { $targetFile.Close() }
+            if ($responseStream) { $responseStream.Close() }
+            if ($response) { $response.Close() }
+            if (Test-Path $DestinationPath) { Remove-Item -Path $DestinationPath -Force -ErrorAction SilentlyContinue }
+            Write-Host "      [!] Server $cleanHost lambat/gagal: $($_.Exception.Message). Mencoba mirror cadangan..." -ForegroundColor DarkYellow
+        }
+    }
+    return $false
+}
+
 # 5. Fungsi Cerdas Install (Offline Folder Apps -> Fallback Winget Online)
 function Install-AppSmart {
     param (
@@ -346,11 +422,12 @@ function Install-AppSmart {
         [string]$SilentArgs = "",   # misal "/qn" atau "/S"
         [string]$WingetId = "",     # misal "Oracle.VirtualBox"
         [string]$WingetArgs = "",
-        [string]$DownloadUrl = "",  # URL unduhan langsung (HTTP/HTTPS) jika ada penambahan aplikasi baru
+        [object]$DownloadUrls = $null, # URL unduhan langsung (bisa array mirror untuk server kencang)
         [object]$CheckPath = $null, # Jalur eksekutabel (string atau array) untuk mendeteksi apakah sudah terpasang
         [switch]$IsInteractive      # Untuk installer pihak ketiga (Delphi/Proteus) agar tidak freeze/hang
     )
 
+    Invoke-LabKeepAlive
     Write-Host "`n========================================================" -ForegroundColor Cyan
     Write-Host "Memproses: $Name" -ForegroundColor Cyan
     Write-Host "========================================================" -ForegroundColor Cyan
@@ -437,51 +514,53 @@ function Install-AppSmart {
         }
     }
 
-    # B. Jika ada DownloadUrl langsung (misal URL GitHub / Web / CDN resmi), unduh dan simpan ke folder Apps/
-    if (-not [string]::IsNullOrWhiteSpace($DownloadUrl)) {
-        Write-Host "[i] Mengunduh installer $Name dari $DownloadUrl..." -ForegroundColor Yellow
-        try {
-            $destName = [System.IO.Path]::GetFileName($DownloadUrl)
+    # B. Jika ada DownloadUrls langsung (CDN mirror cepat), unduh dan simpan ke folder Apps/
+    if ($DownloadUrls) {
+        $urlsArr = @($DownloadUrls)
+        if ($urlsArr.Count -gt 0) {
+            $firstUrl = $urlsArr[0]
+            $destName = [System.IO.Path]::GetFileName(($firstUrl -split '\?')[0])
             if ([string]::IsNullOrWhiteSpace($destName) -or $destName.IndexOfAny([System.IO.Path]::GetInvalidFileNameChars()) -ge 0) {
                 $destName = "$($Name -replace '\s+', '_').exe"
             }
             $destFile = Join-Path $AppsDir $destName
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-            $wc = New-Object System.Net.WebClient
-            $wc.DownloadFile($DownloadUrl, $destFile)
-            $wc.Dispose()
-            Write-Host "[OK] Installer $Name berhasil diunduh dan disimpan ke folder Apps/ ($destName)!" -ForegroundColor Green
+            Write-Host "[i] Mengunduh installer $Name via High-Speed CDN Mirror..." -ForegroundColor Yellow
+            $downloaded = Download-FileWithFastMirrors -Urls $urlsArr -DestinationPath $destFile -ActivityTitle "Mengunduh $Name"
 
-            $ext = [System.IO.Path]::GetExtension($destFile).ToLower()
-            if ($ext -eq ".msi") {
-                $cleanSilent = if ($SilentArgs) { $SilentArgs -replace '(?i)\s*/qn\b', '' -replace '(?i)\s*/quiet\b', '' -replace '(?i)\s*/norestart\b', '' } else { "" }
-                $cleanSilent = $cleanSilent.Trim()
-                $msiArgs = if ([string]::IsNullOrWhiteSpace($cleanSilent)) {
-                    "/i `"$destFile`" /qn /norestart"
+            if ($downloaded -and (Test-Path $destFile)) {
+                Write-Host "[OK] Installer $Name berhasil diunduh dan disimpan ke folder Apps/ ($destName)!" -ForegroundColor Green
+
+                $ext = [System.IO.Path]::GetExtension($destFile).ToLower()
+                if ($ext -eq ".msi") {
+                    $cleanSilent = if ($SilentArgs) { $SilentArgs -replace '(?i)\s*/qn\b', '' -replace '(?i)\s*/quiet\b', '' -replace '(?i)\s*/norestart\b', '' } else { "" }
+                    $cleanSilent = $cleanSilent.Trim()
+                    $msiArgs = if ([string]::IsNullOrWhiteSpace($cleanSilent)) {
+                        "/i `"$destFile`" /qn /norestart"
+                    } else {
+                        "/i `"$destFile`" /qn /norestart $cleanSilent"
+                    }
+                    $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru
                 } else {
-                    "/i `"$destFile`" /qn /norestart $cleanSilent"
-                }
-                $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru
-            } else {
-                $argsList = Convert-ArgsToArray $SilentArgs
-                if ($argsList.Count -gt 0) {
-                    $proc = Start-Process -FilePath $destFile -ArgumentList $argsList -Wait -PassThru
-                } else {
-                    $proc = Start-Process -FilePath $destFile -Wait -PassThru
-                }
-            }
-            if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010 -or $proc.ExitCode -eq 1641 -or $proc.ExitCode -eq 1223 -or $proc.ExitCode -eq 1638) {
-                Write-Host "[OK] Berhasil menginstal $Name!" -ForegroundColor Green
-                if ($CheckPath) {
-                    foreach ($cp in @($CheckPath)) {
-                        $f = Get-ChildItem -Path $cp -File -ErrorAction SilentlyContinue | Select-Object -First 1
-                        if ($f) { Create-AppShortcut -TargetExe $f.FullName -ShortcutName $Name; break }
+                    $argsList = Convert-ArgsToArray $SilentArgs
+                    if ($argsList.Count -gt 0) {
+                        $proc = Start-Process -FilePath $destFile -ArgumentList $argsList -Wait -PassThru
+                    } else {
+                        $proc = Start-Process -FilePath $destFile -Wait -PassThru
                     }
                 }
-                return
+                if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010 -or $proc.ExitCode -eq 1641 -or $proc.ExitCode -eq 1223 -or $proc.ExitCode -eq 1638) {
+                    Write-Host "[OK] Berhasil menginstal $Name!" -ForegroundColor Green
+                    if ($CheckPath) {
+                        foreach ($cp in @($CheckPath)) {
+                            $f = Get-ChildItem -Path $cp -File -ErrorAction SilentlyContinue | Select-Object -First 1
+                            if ($f) { Create-AppShortcut -TargetExe $f.FullName -ShortcutName $Name; break }
+                        }
+                    }
+                    return
+                }
+            } else {
+                Write-Host "[!] Gagal mengunduh dari semua CDN mirror langsung. Mencoba fallback ke Winget..." -ForegroundColor Yellow
             }
-        } catch {
-            Write-Host "[!] Unduhan langsung gagal: $($_.Exception.Message)" -ForegroundColor Yellow
         }
     }
 
@@ -1315,15 +1394,21 @@ function Run-FullInstallation {
     # 4. Node.js LTS & NPM (Otomatis Silent + Global PATH)
     Setup-NodeJS
 
-    # 5. Oracle VM VirtualBox (Otomatis Silent)
+    # 5. Oracle VM VirtualBox (Otomatis Silent dengan Multi-CDN Mirror Cepat)
+    $vboxMirrors = @(
+        "https://download.virtualbox.org/virtualbox/7.1.6/VirtualBox-7.1.6-167084-Win.exe",
+        "https://mirror.ox.ac.uk/sites/download.virtualbox.org/virtualbox/7.1.6/VirtualBox-7.1.6-167084-Win.exe",
+        "http://mirrors.kernel.org/sourceware/cygwin/x86_64/release/", # dummy fallback safety
+        "https://download.virtualbox.org/virtualbox/7.0.20/VirtualBox-7.0.20-163906-Win.exe"
+    )
     Install-AppSmart -Name "Oracle VM VirtualBox" `
                      -FilePattern @("*VirtualBox*.exe", "*VirtualBox*.msi") `
-                     -DownloadUrl "https://download.virtualbox.org/virtualbox/7.1.6/VirtualBox-7.1.6-167084-Win.exe" `
+                     -DownloadUrls $vboxMirrors `
                      -SilentArgs "--silent" `
                      -WingetId "Oracle.VirtualBox" `
                      -CheckPath @("C:\Program Files\Oracle\VirtualBox\VirtualBox.exe", "C:\Program Files (x86)\Oracle\VirtualBox\VirtualBox.exe")
 
-    # 6. Apache NetBeans (Otomatis Silent dengan Java JDK 17+ Terdeteksi)
+    # 6. Apache NetBeans (Otomatis Silent dengan Java JDK 17+ Terdeteksi & Multi-Mirror Cepat)
     $nbJdkPath = $null
     $nbJdkCandidates = @(
         $env:JAVA_HOME,
@@ -1349,9 +1434,15 @@ function Run-FullInstallation {
         Write-Host "   [i] Menghubungkan Apache NetBeans ke JDK: $nbJdkPath" -ForegroundColor Cyan
     }
 
+    $netbeansMirrors = @(
+        "https://dlcdn.apache.org/netbeans/netbeans-installers/25/Apache-NetBeans-25-bin-windows-x64.exe",
+        "https://github.com/apache/netbeans/releases/download/25/Apache-NetBeans-25-bin-windows-x64.exe",
+        "https://archive.apache.org/dist/netbeans/netbeans-installers/25/Apache-NetBeans-25-bin-windows-x64.exe"
+    )
+
     Install-AppSmart -Name "Apache NetBeans IDE" `
                      -FilePattern @("*NetBeans*.exe", "*Apache-NetBeans*.exe") `
-                     -DownloadUrl "https://github.com/apache/netbeans/releases/download/25/Apache-NetBeans-25-bin-windows-x64.exe" `
+                     -DownloadUrls $netbeansMirrors `
                      -SilentArgs $nbSilentArgs `
                      -WingetId "Apache.NetBeans" `
                      -WingetArgs "--override `"$nbSilentArgs`"" `
@@ -1385,9 +1476,13 @@ function Run-FullInstallation {
     Setup-VisualStudio
 
     # 10. Arduino IDE (Arduino Uno, Nano, Mega, IoT)
+    $arduinoMirrors = @(
+        "https://github.com/arduino/arduino-ide/releases/download/2.3.10/arduino-ide_2.3.10_Windows_64bit.msi",
+        "https://downloads.arduino.cc/arduino-ide/arduino-ide_2.3.10_Windows_64bit.msi"
+    )
     Install-AppSmart -Name "Arduino IDE" `
                      -FilePattern @("*arduino*.msi", "*arduino*.exe") `
-                     -DownloadUrl "https://github.com/arduino/arduino-ide/releases/download/2.3.10/arduino-ide_2.3.10_Windows_64bit.msi" `
+                     -DownloadUrls $arduinoMirrors `
                      -SilentArgs "/qn ALLUSERS=1" `
                      -WingetId "ArduinoSA.IDE.stable" `
                      -CheckPath @("C:\Program Files\Arduino IDE\Arduino IDE.exe", "C:\Program Files\Arduino\arduino.exe", "C:\Users\*\AppData\Local\Programs\Arduino IDE\Arduino IDE.exe", "C:\Users\*\AppData\Local\Arduino*\arduino*.exe", "C:\Program Files (x86)\Arduino\arduino.exe")
