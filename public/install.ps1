@@ -14,7 +14,7 @@ Fungsi:
 ==================================================================================
 #>
 
-$SETUP_VERSION = "3.0.1"
+$SETUP_VERSION = "3.0.2"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Setup Bootstrapper Software Lab TI - UNIMAL [v$SETUP_VERSION]"
 
