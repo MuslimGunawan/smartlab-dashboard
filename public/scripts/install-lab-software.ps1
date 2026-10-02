@@ -25,7 +25,7 @@
 #  16. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.0.0"
+$SCRIPT_CURRENT_VERSION = "3.0.1"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 16 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -52,7 +52,11 @@ if (-not (Test-Administrator)) {
 
 # 1.1 Persiapan Sumber Winget (Cegah error sertifikat 0x8a15005e pada sumber msstore)
 try {
-    winget source disable --name msstore 2>$null
+    # Catatan: winget source tidak memiliki subperintah 'disable', gunakan 'remove' jika ada
+    $sources = winget source list 2>$null | Out-String
+    if ($sources -match "msstore") {
+        winget source remove --name msstore 2>$null
+    }
 } catch {}
 
 # 2. Deteksi Lokasi Folder Installer Offline (Apps/)
@@ -114,27 +118,31 @@ if (Test-Path $AppsDir) {
 Write-Host "------------------------------------------------------------------------------`n"
 
 # 2.1 Cek Pembaruan Script Otomatis dari Cloud SmartLab (GitHub / Web Dashboard)
-
 function Check-ScriptSelfUpdate {
     $scriptFile = $PSCommandPath
     if (-not $scriptFile) { $scriptFile = $MyInvocation.MyCommand.Path }
     if (-not $scriptFile -or (-not (Test-Path $scriptFile))) { return }
 
-    Write-Host "[i] Memeriksa versi pembaruan script ke server SmartLab..." -ForegroundColor DarkGray
+    Write-Host "[*] Memeriksa status versi script ke server Cloud SmartLab..." -ForegroundColor Cyan
     try {
         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+        $ts = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
         $updateUrls = @(
-            "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/install-lab-software.ps1",
-            "https://smartlab.is-best.net/scripts/install-lab-software.ps1"
+            "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/install-lab-software.ps1?v=$ts",
+            "https://smartlab.is-best.net/scripts/install-lab-software.ps1?v=$ts"
         )
         $remoteContent = $null
         foreach ($url in $updateUrls) {
             try {
-                $req = [System.Net.WebRequest]::Create($url)
-                $req.Timeout = 3000
+                $cleanHost = ($url -split '/')[2]
+                Write-Host "    -> Menghubungi server mirror ($cleanHost)..." -ForegroundColor DarkGray
+                $req = [System.Net.HttpWebRequest]::Create($url)
+                $req.Timeout = 5000
+                $req.Headers.Add("Cache-Control", "no-cache, no-store, must-revalidate")
+                $req.Headers.Add("Pragma", "no-cache")
                 $resp = $req.GetResponse()
                 $stream = $resp.GetResponseStream()
-                $reader = New-Object System.IO.StreamReader($stream)
+                $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::UTF8)
                 $remoteContent = $reader.ReadToEnd()
                 $reader.Close()
                 $resp.Close()
@@ -146,19 +154,52 @@ function Check-ScriptSelfUpdate {
 
         if (-not [string]::IsNullOrWhiteSpace($remoteContent) -and $remoteContent -match '\$SCRIPT_CURRENT_VERSION\s*=\s*"([^"]+)"') {
             $remoteVer = $matches[1]
-            if ([version]$remoteVer -gt [version]$SCRIPT_CURRENT_VERSION) {
-                Write-Host "[*] Versi script baru terdeteksi (v$remoteVer)! Memperbarui script lokal..." -ForegroundColor Cyan
-                [System.IO.File]::WriteAllText($scriptFile, $remoteContent, [System.Text.Encoding]::UTF8)
-                Write-Host "[OK] Script berhasil diperbarui ke versi $remoteVer! Menjalankan ulang script..." -ForegroundColor Green
-                Start-Sleep -Seconds 1
-                Start-Process powershell.exe -ArgumentList ("-NoProfile -ExecutionPolicy Bypass -File `"{0}`"" -f $scriptFile) -Verb RunAs
-                exit
-            } else {
-                Write-Host "[OK] Script lokal sudah versi terbaru (v$SCRIPT_CURRENT_VERSION)." -ForegroundColor DarkGray
+            try {
+                $vRemote = [version]$remoteVer
+                $vCurrent = [version]$SCRIPT_CURRENT_VERSION
+            } catch {
+                $vRemote = $null
+                $vCurrent = $null
             }
+
+            $isNewer = $false
+            if ($vRemote -and $vCurrent) {
+                if ($vRemote -gt $vCurrent) { $isNewer = $true }
+            } elseif ($remoteVer -ne $SCRIPT_CURRENT_VERSION) {
+                $isNewer = $true
+            }
+
+            if ($isNewer) {
+                Write-Host "`n==============================================================================" -ForegroundColor Yellow
+                Write-Host "   PEMBARUAN SKRIP TERSEDIA! [ v$SCRIPT_CURRENT_VERSION  ==>  v$remoteVer ]" -ForegroundColor Yellow
+                Write-Host "==============================================================================" -ForegroundColor Yellow
+                Write-Host " [*] Mengunduh pembaruan lengkap dari Cloud..." -ForegroundColor Cyan
+                Start-Sleep -Milliseconds 600
+
+                # Tulis file baru
+                [System.IO.File]::WriteAllText($scriptFile, $remoteContent, [System.Text.Encoding]::UTF8)
+                Write-Host " [*] Memverifikasi integritas berkas lokal..." -ForegroundColor Cyan
+                Start-Sleep -Milliseconds 600
+
+                # Verifikasi ulang berkas lokal
+                $verifiedContent = [System.IO.File]::ReadAllText($scriptFile, [System.Text.Encoding]::UTF8)
+                if ($verifiedContent -match '\$SCRIPT_CURRENT_VERSION\s*=\s*"([^"]+)"' -and $matches[1] -eq $remoteVer) {
+                    Write-Host " [OK] Skrip berhasil diperbarui ke Versi $remoteVer secara sempurna!" -ForegroundColor Green
+                    Write-Host " [*] Melakukan restart skrip otomatis dalam 2 detik..." -ForegroundColor Yellow
+                    Start-Sleep -Seconds 2
+                    Start-Process powershell.exe -ArgumentList ("-NoProfile -ExecutionPolicy Bypass -File `"{0}`"" -f $scriptFile) -Verb RunAs
+                    exit
+                } else {
+                    Write-Host " [!] Verifikasi versi gagal. Melanjutkan dengan versi saat ini..." -ForegroundColor Yellow
+                }
+            } else {
+                Write-Host " [OK] Terverifikasi: Skrip sudah menggunakan versi terbaru (v$SCRIPT_CURRENT_VERSION).`n" -ForegroundColor Green
+            }
+        } else {
+            Write-Host " [i] Tidak dapat menjangkau server pembaruan (offline mode). Tetap berjalan pada v$SCRIPT_CURRENT_VERSION.`n" -ForegroundColor DarkGray
         }
     } catch {
-        # Jika offline / tanpa koneksi internet, lanjutkan tanpa hambatan
+        Write-Host " [i] Mode offline aktif. Menggunakan skrip versi $SCRIPT_CURRENT_VERSION.`n" -ForegroundColor DarkGray
     }
 }
 

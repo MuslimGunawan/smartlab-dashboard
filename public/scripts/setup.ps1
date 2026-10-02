@@ -14,7 +14,7 @@ Fungsi:
 ==================================================================================
 #>
 
-$SETUP_VERSION = "3.0.0"
+$SETUP_VERSION = "3.0.1"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Setup Bootstrapper Software Lab TI - UNIMAL [v$SETUP_VERSION]"
 
@@ -48,14 +48,17 @@ Write-Host "    -> $appsDir" -ForegroundColor Gray
 # 2. Unduh Berkas Eksekusi Utama dari GitHub Resmi SmartLab TI (dengan fallback mirror server)
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
 $wc = New-Object System.Net.WebClient
+$wc.Headers.Add("Cache-Control", "no-cache, no-store, must-revalidate")
+$wc.Headers.Add("Pragma", "no-cache")
 
+$ts = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 $batUrls = @(
-    "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/jalankan-instalasi.bat",
-    "https://smartlab.is-best.net/scripts/jalankan-instalasi.bat"
+    "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/jalankan-instalasi.bat?v=$ts",
+    "https://smartlab.is-best.net/scripts/jalankan-instalasi.bat?v=$ts"
 )
 $psUrls  = @(
-    "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/install-lab-software.ps1",
-    "https://smartlab.is-best.net/scripts/install-lab-software.ps1"
+    "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/install-lab-software.ps1?v=$ts",
+    "https://smartlab.is-best.net/scripts/install-lab-software.ps1?v=$ts"
 )
 
 $destBat = Join-Path $targetBase "jalankan-instalasi.bat"
