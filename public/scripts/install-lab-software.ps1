@@ -51,7 +51,6 @@ if (-not (Test-Administrator)) {
 }
 
 # 1.1 FITUR ANTI-SLEEP, ANTI-LOCK & ANTI-IDLE SHUTDOWN (Komputer Lab Tetap Terjaga 100%)
-# Mencegah PC mati otomatis karena timer shutdown/sleep 10 menit saat instalasi berlangsung
 try {
     Add-Type -TypeDefinition @"
     using System;
@@ -75,12 +74,11 @@ try {
     [SystemPowerKeeper]::KeepAwake()
 } catch {}
 
-# Timer background stimulasi aktivitas sistem (mencegah software shutdown lab pihak ketiga)
 function Invoke-LabKeepAlive {
     try {
         [SystemPowerKeeper]::KeepAwake()
         $wsh = New-Object -ComObject WScript.Shell
-        $wsh.SendKeys("{F15}") # F15 adalah tombol virtual aman tanpa efek samping
+        $wsh.SendKeys("{F15}")
     } catch {}
 }
 
@@ -136,7 +134,6 @@ if (-not $AppsDir) {
     }
 }
 
-# 2.0 TAMPILAN BANNER MODERN DENGAN LOGO RESMI SMARTLAB UNIMAL
 function Show-SmartLabBanner {
     Write-Host "  ____________________________________________________________________________" -ForegroundColor DarkGreen
     Write-Host " |                                                                            |" -ForegroundColor DarkGreen
@@ -160,11 +157,11 @@ function Show-SmartLabBanner {
 
     if (Test-Path $AppsDir) {
         $fileCount = (Get-ChildItem -Path $AppsDir -File | Where-Object { $_.Extension -match "exe|msi|bat" } | Measure-Object).Count
-        Write-Host "  [OK] Master Offline: $AppsDir ($fileCount Installer Siap)" -ForegroundColor Green
+        Write-Host "  [OK] Direktori Master Offline : $AppsDir ($fileCount Installer)" -ForegroundColor Green
     } else {
         Write-Host "  [i] Mode Online (Winget & Cloud SmartLab)" -ForegroundColor Yellow
     }
-    Write-Host "  [OK] Mode Daya Lab : Komputer Terkunci Terjaga (Anti-Sleep / Auto-Shutdown On)" -ForegroundColor Cyan
+    Write-Host "  [OK] Anti-Sleep / Shutdown Guard : AKTIF (Komputer Tetap Terjaga)" -ForegroundColor Cyan
     Write-Host "  ----------------------------------------------------------------------------`n" -ForegroundColor DarkGray
 }
 
@@ -341,68 +338,6 @@ function Create-AppShortcut {
     } catch {}
 }
 
-# 4.3. Modern Download Helper dengan Live Visual Progress Bar & Kecepatan
-function Download-FileWithProgress {
-    param (
-        [string]$Url,
-        [string]$DestinationPath,
-        [string]$ActivityTitle = "Mengunduh Berkas"
-    )
-
-    try {
-        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-        $request = [System.Net.HttpWebRequest]::Create($Url)
-        $request.Timeout = 60000
-        $request.UserAgent = "SmartLab-Downloader/3.1.0"
-        $response = $request.GetResponse()
-        $totalBytes = $response.ContentLength
-        $responseStream = $response.GetResponseStream()
-
-        $parentDir = Split-Path -Parent $DestinationPath
-        if (-not (Test-Path $parentDir)) { New-Item -ItemType Directory -Path $parentDir -Force | Out-Null }
-
-        $targetFile = New-Object System.IO.FileStream($DestinationPath, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
-        $buffer = New-Object byte[] 65536
-        $downloadedBytes = 0
-        $sw = [System.Diagnostics.Stopwatch]::StartNew()
-        $lastReport = [System.Diagnostics.Stopwatch]::StartNew()
-
-        while (($bytesRead = $responseStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
-            $targetFile.Write($buffer, 0, $bytesRead)
-            $downloadedBytes += $bytesRead
-
-            if ($lastReport.ElapsedMilliseconds -gt 250) {
-                Invoke-LabKeepAlive
-                $percent = if ($totalBytes -gt 0) { [math]::Min(100, [int](($downloadedBytes / $totalBytes) * 100)) } else { 0 }
-                $speedKBps = if ($sw.Elapsed.TotalSeconds -gt 0) { [math]::Round(($downloadedBytes / 1024) / $sw.Elapsed.TotalSeconds, 1) } else { 0 }
-                $mbDownloaded = [math]::Round($downloadedBytes / 1MB, 2)
-                $mbTotal = if ($totalBytes -gt 0) { [math]::Round($totalBytes / 1MB, 2) } else { 0 }
-
-                # Progress Bar ASCII yang rapi di konsol
-                $barLength = 25
-                $completedBars = [int]($percent / (100 / $barLength))
-                $remainingBars = $barLength - $completedBars
-                $barStr = ("█" * $completedBars) + ("░" * $remainingBars)
-
-                Write-Progress -Activity "$ActivityTitle" -Status "[$barStr] $percent% ($mbDownloaded MB / $mbTotal MB) @ $speedKBps KB/s" -PercentComplete $percent
-                $lastReport.Restart()
-            }
-        }
-
-        Write-Progress -Activity "$ActivityTitle" -Completed
-        $targetFile.Close()
-        $responseStream.Close()
-        $response.Close()
-        return $true
-    } catch {
-        Write-Progress -Activity "$ActivityTitle" -Completed
-        if ($targetFile) { $targetFile.Close() }
-        if ($responseStream) { $responseStream.Close() }
-        if ($response) { $response.Close() }
-        throw $_
-    }
-}
-
 # 5. Fungsi Cerdas Install (Offline Folder Apps -> Fallback Winget Online)
 function Install-AppSmart {
     param (
@@ -416,10 +351,9 @@ function Install-AppSmart {
         [switch]$IsInteractive      # Untuk installer pihak ketiga (Delphi/Proteus) agar tidak freeze/hang
     )
 
-    Invoke-LabKeepAlive
-    Write-Host "`n+----------------------------------------------------------------------------+" -ForegroundColor DarkGreen
-    Write-Host "| [PROSES] $Name" -ForegroundColor Green
-    Write-Host "+----------------------------------------------------------------------------+" -ForegroundColor DarkGreen
+    Write-Host "`n========================================================" -ForegroundColor Cyan
+    Write-Host "Memproses: $Name" -ForegroundColor Cyan
+    Write-Host "========================================================" -ForegroundColor Cyan
 
     # 0. Cek apakah software SUDAH terpasang di sistem ini (Cerdas: Hindari install ulang)
     if ($CheckPath) {
@@ -433,9 +367,9 @@ function Install-AppSmart {
             if ($alreadyInstalled) { break }
         }
         if ($alreadyInstalled) {
-            Write-Host "   [✓ TERPASANG] Terdeteksi di $($alreadyInstalled.FullName)" -ForegroundColor Green
+            Write-Host "   [OK SUDAH TERPASANG] $Name terdeteksi di $($alreadyInstalled.FullName)" -ForegroundColor Green
             Create-AppShortcut -TargetExe $alreadyInstalled.FullName -ShortcutName $Name
-            Write-Host "   -> Melewati proses instalasi (Smart-Skip Aktif).`n" -ForegroundColor DarkGray
+            Write-Host "   -> Melewati proses instalasi (Skip)." -ForegroundColor DarkGray
             return
         }
     }
@@ -450,22 +384,22 @@ function Install-AppSmart {
         }
 
         if ($offlineFile) {
-            Write-Host "   [✓ OFFLINE] Ditemukan di USB/Apps: $($offlineFile.Name)" -ForegroundColor Green
+            Write-Host "[OK] Ditemukan file installer offline: $($offlineFile.Name)" -ForegroundColor Green
             
             if ($IsInteractive) {
-                Write-Host "   [i] Membuka installer interaktif: $($offlineFile.Name)" -ForegroundColor Yellow
-                Write-Host "       >>> Ikuti petunjuk setup / aktivasi lisensi lab di layar..." -ForegroundColor Cyan
+                Write-Host "[i] Membuka berkas/installer interaktif: $($offlineFile.Name)" -ForegroundColor Yellow
+                Write-Host "    >>> Silakan ikuti petunjuk setup / aktivasi lisensi lab di layar yang muncul..." -ForegroundColor Cyan
                 $ext = $offlineFile.Extension.ToLower()
                 if ($ext -match "zip|rar|7z") {
+                    # Jika berupa file arsip, buka foldernya di Windows Explorer agar asisten lab dapat mengekstrak/menjalankan setup
                     Start-Process explorer.exe -ArgumentList "/select,`"$($offlineFile.FullName)`""
                 } else {
                     $proc = Start-Process -FilePath $offlineFile.FullName -Wait -PassThru
                 }
-                Write-Host "   [OK] Selesai memproses $Name.`n" -ForegroundColor Green
+                Write-Host "[OK] Selesai memproses $Name." -ForegroundColor Green
                 return
             } else {
-                Write-Host "   [⏳] Memasang secara otomatis di latar belakang (Silent Mode)..." -ForegroundColor Yellow
-                $swInst = [System.Diagnostics.Stopwatch]::StartNew()
+                Write-Host "[i] Menjalankan instalasi lokal secara otomatis dari flashdisk..." -ForegroundColor Yellow
                 $ext = $offlineFile.Extension.ToLower()
                 if ($ext -eq ".msi") {
                     $cleanSilent = if ($SilentArgs) { $SilentArgs -replace '(?i)\s*/qn\b', '' -replace '(?i)\s*/quiet\b', '' -replace '(?i)\s*/norestart\b', '' } else { "" }
@@ -484,11 +418,10 @@ function Install-AppSmart {
                         $proc = Start-Process -FilePath $offlineFile.FullName -Wait -PassThru
                     }
                 }
-                $swInst.Stop()
 
                 # Kode 0 = Sukses, 3010 = Sukses (Butuh restart), 1641 = Sukses reboot, 1223 = Elevated/UAC Success, 1638 = Versi sudah ada
                 if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010 -or $proc.ExitCode -eq 1641 -or $proc.ExitCode -eq 1223 -or $proc.ExitCode -eq 1638) {
-                    Write-Host "   [✓ SUKSES] Berhasil dipasang dalam $($swInst.Elapsed.Seconds) detik!" -ForegroundColor Green
+                    Write-Host "[OK] Berhasil menginstal $Name dari folder Apps!" -ForegroundColor Green
                     if ($CheckPath) {
                         foreach ($cp in @($CheckPath)) {
                             $f = Get-ChildItem -Path $cp -File -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -497,7 +430,7 @@ function Install-AppSmart {
                     }
                     return
                 } else {
-                    Write-Host "   [!] Installer offline selesai dengan kode exit: $($proc.ExitCode)" -ForegroundColor Yellow
+                    Write-Host "[!] Installer offline selesai dengan kode exit: $($proc.ExitCode)" -ForegroundColor Yellow
                     return
                 }
             }
@@ -506,52 +439,18 @@ function Install-AppSmart {
 
     # B. Jika ada DownloadUrl langsung (misal URL GitHub / Web / CDN resmi), unduh dan simpan ke folder Apps/
     if (-not [string]::IsNullOrWhiteSpace($DownloadUrl)) {
-        Write-Host "   [🌐 CLOUD] Mengunduh master $Name ke folder Apps..." -ForegroundColor Cyan
+        Write-Host "[i] Mengunduh installer $Name dari $DownloadUrl..." -ForegroundColor Yellow
         try {
             $destName = [System.IO.Path]::GetFileName($DownloadUrl)
             if ([string]::IsNullOrWhiteSpace($destName) -or $destName.IndexOfAny([System.IO.Path]::GetInvalidFileNameChars()) -ge 0) {
                 $destName = "$($Name -replace '\s+', '_').exe"
             }
             $destFile = Join-Path $AppsDir $destName
-            
-            Download-FileWithProgress -Url $DownloadUrl -DestinationPath $destFile -ActivityTitle "Mengunduh $Name"
-            Write-Host "   [✓ TERUNDUH] Tersimpan ke: $destName" -ForegroundColor Green
-
-            $ext = [System.IO.Path]::GetExtension($destFile).ToLower()
-            Write-Host "   [⏳] Memasang aplikasi ke sistem..." -ForegroundColor Yellow
-            $swInst = [System.Diagnostics.Stopwatch]::StartNew()
-            if ($ext -eq ".msi") {
-                $cleanSilent = if ($SilentArgs) { $SilentArgs -replace '(?i)\s*/qn\b', '' -replace '(?i)\s*/quiet\b', '' -replace '(?i)\s*/norestart\b', '' } else { "" }
-                $cleanSilent = $cleanSilent.Trim()
-                $msiArgs = if ([string]::IsNullOrWhiteSpace($cleanSilent)) {
-                    "/i `"$destFile`" /qn /norestart"
-                } else {
-                    "/i `"$destFile`" /qn /norestart $cleanSilent"
-                }
-                $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru
-            } else {
-                $argsList = Convert-ArgsToArray $SilentArgs
-                if ($argsList.Count -gt 0) {
-                    $proc = Start-Process -FilePath $destFile -ArgumentList $argsList -Wait -PassThru
-                } else {
-                    $proc = Start-Process -FilePath $destFile -Wait -PassThru
-                }
-            }
-            $swInst.Stop()
-            if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010 -or $proc.ExitCode -eq 1641 -or $proc.ExitCode -eq 1223 -or $proc.ExitCode -eq 1638) {
-                Write-Host "   [✓ SUKSES] Berhasil dipasang dalam $($swInst.Elapsed.Seconds) detik!" -ForegroundColor Green
-                if ($CheckPath) {
-                    foreach ($cp in @($CheckPath)) {
-                        $f = Get-ChildItem -Path $cp -File -ErrorAction SilentlyContinue | Select-Object -First 1
-                        if ($f) { Create-AppShortcut -TargetExe $f.FullName -ShortcutName $Name; break }
-                    }
-                }
-                return
-            }
-        } catch {
-            Write-Host "   [!] Unduhan gagal: $($_.Exception.Message)" -ForegroundColor Yellow
-        }
-    }
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+            $wc = New-Object System.Net.WebClient
+            $wc.DownloadFile($DownloadUrl, $destFile)
+            $wc.Dispose()
+            Write-Host "[OK] Installer $Name berhasil diunduh dan disimpan ke folder Apps/ ($destName)!" -ForegroundColor Green
 
             $ext = [System.IO.Path]::GetExtension($destFile).ToLower()
             if ($ext -eq ".msi") {

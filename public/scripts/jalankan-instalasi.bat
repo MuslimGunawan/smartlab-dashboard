@@ -19,9 +19,9 @@ if not exist "%TARGET_PS%" (
 :: CMD hanya bertindak sebagai pemicu/launcher, lalu jendela CMD ini langsung menutup otomatis.
 net session >nul 2>&1
 if "%errorlevel%"=="0" (
-    start powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%TARGET_PS%"
+    start powershell.exe -NoProfile -ExecutionPolicy Bypass -NoExit -File "%TARGET_PS%"
     exit /b 0
 ) else (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process powershell.exe -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File \"\"%TARGET_PS%\"\"' -Verb RunAs"
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process powershell.exe -ArgumentList '-NoProfile -ExecutionPolicy Bypass -NoExit -File \"\"%TARGET_PS%\"\"' -Verb RunAs"
     exit /b 0
 )
