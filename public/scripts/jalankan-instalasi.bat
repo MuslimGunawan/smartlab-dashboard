@@ -15,16 +15,13 @@ if not exist "%TARGET_PS%" (
     powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12; $wc = New-Object System.Net.WebClient; $urls = @('https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/install-lab-software.ps1', 'https://smartlab.is-best.net/scripts/install-lab-software.ps1'); foreach ($u in $urls) { try { $wc.DownloadFile($u, '%~dp0Apps\install-lab-software.ps1'); break } catch {} }; $wc.Dispose()"
 )
 
-:: 3. Jalankan langsung di PowerShell dengan Hak Administrator (Konsisten & Bebas Error)
-:: Baik diklik 2x biasa (Tanpa Run as) maupun klik kanan (Run as administrator),
-:: installer SELALU terbuka di satu jendela PowerShell Administrator yang bersih!
+:: 3. Jalankan langsung di jendela PowerShell Administrator yang bersih!
+:: CMD hanya bertindak sebagai pemicu/launcher, lalu jendela CMD ini langsung menutup otomatis.
 net session >nul 2>&1
 if "%errorlevel%"=="0" (
-    :: Sudah Administrator -> Langsung jalankan di jendela PowerShell
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%TARGET_PS%"
+    start powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%TARGET_PS%"
     exit /b 0
 ) else (
-    :: Belum Administrator (Klik 2x Biasa) -> Minta izin UAC & buka langsung di jendela PowerShell Administrator
     powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process powershell.exe -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File \"\"%TARGET_PS%\"\"' -Verb RunAs"
     exit /b 0
 )
