@@ -151,7 +151,7 @@ function Check-ScriptSelfUpdate {
                 [System.IO.File]::WriteAllText($scriptFile, $remoteContent, [System.Text.Encoding]::UTF8)
                 Write-Host "[OK] Script berhasil diperbarui ke versi $remoteVer! Menjalankan ulang script..." -ForegroundColor Green
                 Start-Sleep -Seconds 1
-                Start-Process powershell.exe -ArgumentList ("-NoProfile -ExecutionPolicy Bypass -File `"{0}`"" -f $scriptFile)
+                Start-Process powershell.exe -ArgumentList ("-NoProfile -ExecutionPolicy Bypass -File `"{0}`"" -f $scriptFile) -Verb RunAs
                 exit
             } else {
                 Write-Host "[OK] Script lokal sudah versi terbaru (v$SCRIPT_CURRENT_VERSION)." -ForegroundColor DarkGray
