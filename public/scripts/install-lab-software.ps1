@@ -25,7 +25,7 @@
 #  16. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.1.1"
+$SCRIPT_CURRENT_VERSION = "3.2.0"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 16 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -151,18 +151,9 @@ function Show-SmartLabBanner {
     Write-Host " |   '--------||--------'   " -NoNewline -ForegroundColor DarkGreen
     Write-Host "  TEKNIK INFORMATIKA - UNIVERSITAS MALIKUSSALEH " -ForegroundColor White
     Write-Host " |            ||            " -NoNewline -ForegroundColor DarkGreen
-    Write-Host "  [ VERSI $SCRIPT_CURRENT_VERSION ] - ANTI-SLEEP & AUTO-SHUTDOWN GUARD AKTIF   " -ForegroundColor Yellow
+    Write-Host "  [ STANDARISASI LABORATORIUM - VERSI $SCRIPT_CURRENT_VERSION ]               " -ForegroundColor Yellow
     Write-Host " |________[========]________|_________________________________________________|" -ForegroundColor DarkGreen
     Write-Host ""
-
-    if (Test-Path $AppsDir) {
-        $fileCount = (Get-ChildItem -Path $AppsDir -File | Where-Object { $_.Extension -match "exe|msi|bat" } | Measure-Object).Count
-        Write-Host "  [OK] Direktori Master Offline : $AppsDir ($fileCount Installer)" -ForegroundColor Green
-    } else {
-        Write-Host "  [i] Mode Online (Winget & Cloud SmartLab)" -ForegroundColor Yellow
-    }
-    Write-Host "  [OK] Anti-Sleep / Shutdown Guard : AKTIF (Komputer Tetap Terjaga)" -ForegroundColor Cyan
-    Write-Host "  ----------------------------------------------------------------------------`n" -ForegroundColor DarkGray
 }
 
 Show-SmartLabBanner
@@ -338,7 +329,7 @@ function Create-AppShortcut {
     } catch {}
 }
 
-# 4.3. High-Speed Multi-Mirror Downloader dengan Visual Live Progress
+# 4.3. High-Speed Multi-Mirror Downloader dengan Visual Live Progress & Google Drive Direct Support
 function Download-FileWithFastMirrors {
     param (
         [object]$Urls,
@@ -352,20 +343,71 @@ function Download-FileWithFastMirrors {
     $parentDir = Split-Path -Parent $DestinationPath
     if (-not (Test-Path $parentDir)) { New-Item -ItemType Directory -Path $parentDir -Force | Out-Null }
 
+    $cookieJar = New-Object System.Net.CookieContainer
+
     foreach ($url in $urlList) {
         if ([string]::IsNullOrWhiteSpace($url)) { continue }
         $cleanHost = ($url -split '/')[2]
         Write-Host "   -> Mencoba server unduh: $cleanHost ..." -ForegroundColor DarkCyan
 
+        # Normalisasi link Google Drive jika pengguna memberikan URL share/view biasa
+        $actualUrl = $url
+        if ($url -match 'drive\.google\.com') {
+            $gdriveId = $null
+            if ($url -match 'id=([a-zA-Z0-9_-]+)') {
+                $gdriveId = $matches[1]
+            } elseif ($url -match '/d/([a-zA-Z0-9_-]+)') {
+                $gdriveId = $matches[1]
+            }
+            if ($gdriveId) {
+                $actualUrl = "https://drive.usercontent.google.com/download?id=$gdriveId&export=download&confirm=t"
+            }
+        }
+
         $targetFile = $null
         $responseStream = $null
         $response = $null
         try {
-            $request = [System.Net.HttpWebRequest]::Create($url)
-            $request.Timeout = 15000
+            $request = [System.Net.HttpWebRequest]::Create($actualUrl)
+            $request.Timeout = 20000
             $request.ReadWriteTimeout = 60000
+            $request.CookieContainer = $cookieJar
             $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             $response = $request.GetResponse()
+
+            # Google Drive Fallback: Tangani halaman konfirmasi "Google Drive can't scan this file for viruses"
+            $contentType = $response.ContentType
+            if ($url -match 'drive\.google\.com' -and $contentType -match 'text/html') {
+                $htmlReader = New-Object System.IO.StreamReader($response.GetResponseStream(), [System.Text.Encoding]::UTF8)
+                $htmlBody = $htmlReader.ReadToEnd()
+                $htmlReader.Close()
+                $response.Close()
+
+                # Cek apakah kuota Google Drive habis
+                if ($htmlBody -match "quota exceeded" -or $htmlBody -match "kuota terlampaui" -or $htmlBody -match "akses terlampaui") {
+                    Write-Host "      [!] Kuota harian Google Drive mirror ini penuh. Berpindah ke salinan berikutnya..." -ForegroundColor DarkYellow
+                    continue
+                }
+
+                # Cari token konfirmasi download
+                $confirmToken = $null
+                if ($htmlBody -match 'confirm=([0-9a-zA-Z_-]+)') {
+                    $confirmToken = $matches[1]
+                } elseif ($htmlBody -match 'name="confirm"\s+value="([^"]+)"') {
+                    $confirmToken = $matches[1]
+                }
+
+                if ($confirmToken -and $gdriveId) {
+                    $actualUrl = "https://docs.google.com/uc?export=download&id=$gdriveId&confirm=$confirmToken"
+                    $request = [System.Net.HttpWebRequest]::Create($actualUrl)
+                    $request.Timeout = 20000
+                    $request.ReadWriteTimeout = 60000
+                    $request.CookieContainer = $cookieJar
+                    $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    $response = $request.GetResponse()
+                }
+            }
+
             $totalBytes = $response.ContentLength
             $responseStream = $response.GetResponseStream()
 
@@ -401,6 +443,18 @@ function Download-FileWithFastMirrors {
             $targetFile.Close()
             $responseStream.Close()
             $response.Close()
+
+            # Verifikasi jika file yang terunduh bukan error HTML kecil
+            $fInfo = Get-Item $DestinationPath -ErrorAction SilentlyContinue
+            if ($fInfo -and $fInfo.Length -lt 200000 -and $url -match 'drive\.google\.com') {
+                $checkTxt = [System.IO.File]::ReadAllText($DestinationPath)
+                if ($checkTxt -match "<html" -or $checkTxt -match "quota exceeded" -or $checkTxt -match "kuota terlampaui") {
+                    Remove-Item -Path $DestinationPath -Force -ErrorAction SilentlyContinue
+                    Write-Host "      [!] Google Drive mirror ini limit/kuota terlampaui. Berpindah ke mirror berikutnya..." -ForegroundColor DarkYellow
+                    continue
+                }
+            }
+
             return $true
         } catch {
             Write-Progress -Activity "$ActivityTitle" -Completed
@@ -414,7 +468,29 @@ function Download-FileWithFastMirrors {
     return $false
 }
 
-# 5. Fungsi Cerdas Install (Offline Folder Apps -> Fallback Winget Online)
+# 5. Fungsi Pelacak Status Instalasi & Ringkasan Hasil Otomasi
+$script:InstallResults = @()
+
+function Record-InstallResult {
+    param (
+        [string]$Name,
+        [string]$Status,       # "SUDAH TERPASANG", "BERHASIL DIINSTAL", "BELUM TERSEDIA", "GAGAL"
+        [string]$Keterangan
+    )
+    $existing = $script:InstallResults | Where-Object { $_.Name -eq $Name } | Select-Object -First 1
+    if ($existing) {
+        $existing.Status = $Status
+        $existing.Keterangan = $Keterangan
+    } else {
+        $script:InstallResults += [PSCustomObject]@{
+            Name       = $Name
+            Status     = $Status
+            Keterangan = $Keterangan
+        }
+    }
+}
+
+# 5.1. Fungsi Cerdas Install (Offline Folder Apps -> Fallback Winget Online)
 function Install-AppSmart {
     param (
         [string]$Name,
@@ -447,6 +523,7 @@ function Install-AppSmart {
             Write-Host "   [OK SUDAH TERPASANG] $Name terdeteksi di $($alreadyInstalled.FullName)" -ForegroundColor Green
             Create-AppShortcut -TargetExe $alreadyInstalled.FullName -ShortcutName $Name
             Write-Host "   -> Melewati proses instalasi (Skip)." -ForegroundColor DarkGray
+            Record-InstallResult -Name $Name -Status "SUDAH TERPASANG" -Keterangan "Terdeteksi aktif di sistem (Skip)"
             return
         }
     }
@@ -474,6 +551,7 @@ function Install-AppSmart {
                     $proc = Start-Process -FilePath $offlineFile.FullName -Wait -PassThru
                 }
                 Write-Host "[OK] Selesai memproses $Name." -ForegroundColor Green
+                Record-InstallResult -Name $Name -Status "BERHASIL DIINSTAL" -Keterangan "Setup interaktif selesai"
                 return
             } else {
                 Write-Host "[i] Menjalankan instalasi lokal secara otomatis dari flashdisk..." -ForegroundColor Yellow
@@ -505,9 +583,11 @@ function Install-AppSmart {
                             if ($f) { Create-AppShortcut -TargetExe $f.FullName -ShortcutName $Name; break }
                         }
                     }
+                    Record-InstallResult -Name $Name -Status "BERHASIL DIINSTAL" -Keterangan "Terpasang dari offline Apps"
                     return
                 } else {
                     Write-Host "[!] Installer offline selesai dengan kode exit: $($proc.ExitCode)" -ForegroundColor Yellow
+                    Record-InstallResult -Name $Name -Status "GAGAL" -Keterangan "Exit Code: $($proc.ExitCode)"
                     return
                 }
             }
@@ -556,6 +636,7 @@ function Install-AppSmart {
                             if ($f) { Create-AppShortcut -TargetExe $f.FullName -ShortcutName $Name; break }
                         }
                     }
+                    Record-InstallResult -Name $Name -Status "BERHASIL DIINSTAL" -Keterangan "Terunduh & terpasang via Mirror"
                     return
                 }
             } else {
@@ -614,6 +695,7 @@ function Install-AppSmart {
                             if ($f) { Create-AppShortcut -TargetExe $f.FullName -ShortcutName $Name; break }
                         }
                     }
+                    Record-InstallResult -Name $Name -Status "BERHASIL DIINSTAL" -Keterangan "Terunduh & terpasang via Winget"
                     return
                 }
             }
@@ -625,6 +707,7 @@ function Install-AppSmart {
         $installed = winget list --id "$WingetId" --source winget 2>$null
         if ($LASTEXITCODE -eq 0 -and $installed -match $WingetId) {
             Write-Host "[OK] $Name sudah terinstal di sistem ini." -ForegroundColor Green
+            Record-InstallResult -Name $Name -Status "SUDAH TERPASANG" -Keterangan "Terdeteksi via Winget (Skip)"
             return
         }
 
@@ -633,12 +716,15 @@ function Install-AppSmart {
 
         if ($LASTEXITCODE -eq 0) {
             Write-Host "[OK] Berhasil menginstal $Name via Winget!" -ForegroundColor Green
+            Record-InstallResult -Name $Name -Status "BERHASIL DIINSTAL" -Keterangan "Terpasang via Winget Direct"
         } else {
             Write-Host "[!] Gagal menginstal $Name via Winget. Periksa koneksi internet." -ForegroundColor Red
+            Record-InstallResult -Name $Name -Status "GAGAL" -Keterangan "Winget error / offline"
         }
     } else {
         Write-Host "[!] File installer offline $Name ($FilePattern) belum ada di folder Apps/." -ForegroundColor Yellow
         Write-Host "    (Silakan salin installer pihak ketiga $Name ke folder Apps dan jalankan kembali)." -ForegroundColor Gray
+        Record-InstallResult -Name $Name -Status "BELUM TERSEDIA" -Keterangan "Menunggu file master di Apps/"
     }
 }
 
@@ -1379,6 +1465,7 @@ function Test-LabSoftwareStatus {
 # (Smart-Skip: Jika sudah ada dilewati, jika belum ada langsung dipasang)
 # ==============================================================================
 function Run-FullInstallation {
+    $script:InstallResults = @()
     Write-Host "`n[>>>] Memulai Otomasi Lengkap Standarisasi Software Lab TI..." -ForegroundColor Cyan
     Write-Host "      (Semua software wajib: Yang sudah terpasang otomatis diskip)`n" -ForegroundColor DarkGray
 
@@ -1496,17 +1583,66 @@ function Run-FullInstallation {
     # 13. XAMPP (Otomatis Silent + Konfigurasi Port Anti-Bentrok)
     Setup-XamppStack
 
-    # 14. Cisco Packet Tracer
-    Install-AppSmart -Name "Cisco Packet Tracer" -FilePattern "*packettracer*.exe" -SilentArgs "/VERYSILENT /NORESTART" -CheckPath "C:\Program Files\Cisco Packet Tracer *\bin\PacketTracer.exe"
+    # 14. Cisco Packet Tracer (Mendukung Multi-Mirror Google Drive & Direct CDN)
+    $ciscoMirrors = @(
+        # Salinan Google Drive (Multi-Mirror: jika kuota mirror 1 habis, otomatis pindah ke salinan berikutnya)
+        # Asisten lab / Pengguna dapat menambahkan link share Google Drive atau direct URL di sini:
+        "https://drive.google.com/uc?export=download&id=1CiscoPacketTracerMasterLabUnimalMirror1",
+        "https://drive.google.com/uc?export=download&id=1CiscoPacketTracerMasterLabUnimalMirror2",
+        "https://drive.google.com/uc?export=download&id=1CiscoPacketTracerMasterLabUnimalMirror3",
+        "https://drive.google.com/uc?export=download&id=1CiscoPacketTracerMasterLabUnimalMirror4"
+    )
+    Install-AppSmart -Name "Cisco Packet Tracer" `
+                     -FilePattern @("*packettracer*.exe", "*PacketTracer*.exe", "*Cisco*.exe") `
+                     -DownloadUrls $ciscoMirrors `
+                     -SilentArgs "/VERYSILENT /NORESTART" `
+                     -CheckPath @("C:\Program Files\Cisco Packet Tracer *\bin\PacketTracer.exe", "C:\Program Files (x86)\Cisco Packet Tracer *\bin\PacketTracer.exe")
 
     # 15. Embarcadero Delphi (Pihak Ketiga / Interaktif)
-    Install-AppSmart -Name "Embarcadero Delphi" -FilePattern "*delphi*.exe" -IsInteractive -CheckPath "C:\Program Files*\Embarcadero\Studio\*\bin\bds.exe"
+    Install-AppSmart -Name "Embarcadero Delphi" -FilePattern "*delphi*.exe" -IsInteractive -CheckPath @("C:\Program Files*\Embarcadero\Studio\*\bin\bds.exe", "C:\Program Files (x86)\Embarcadero\Studio\*\bin\bds.exe")
 
     # 16. Proteus Design Suite (Pihak Ketiga / Interaktif)
-    Install-AppSmart -Name "Proteus Design Suite" -FilePattern "*proteus*.exe" -IsInteractive -CheckPath "C:\Program Files*\Labcenter Electronics\Proteus *\BIN\PDS.EXE"
+    Install-AppSmart -Name "Proteus Design Suite" -FilePattern "*proteus*.exe" -IsInteractive -CheckPath @("C:\Program Files*\Labcenter Electronics\Proteus *\BIN\PDS.EXE", "C:\Program Files (x86)\Labcenter Electronics\Proteus *\BIN\PDS.EXE")
 
-    Write-Host "`n[OK] Seluruh proses otomasi selesai!" -ForegroundColor Green
-    Test-LabSoftwareStatus
+    # ==============================================================================
+    # RANGKUMAN LENGKAP HASIL STANDARISASI LABORATORIUM
+    # Bersihkan layar, tampilkan banner & rekapitulasi jumlah berhasil / gagal
+    # ==============================================================================
+    Clear-Host
+    Show-SmartLabBanner
+
+    $totalApps = $script:InstallResults.Count
+    $berhasil = ($script:InstallResults | Where-Object { $_.Status -in @("SUDAH TERPASANG", "BERHASIL DIINSTAL") } | Measure-Object).Count
+    $menunggu = ($script:InstallResults | Where-Object { $_.Status -eq "BELUM TERSEDIA" } | Measure-Object).Count
+    $gagal    = ($script:InstallResults | Where-Object { $_.Status -eq "GAGAL" } | Measure-Object).Count
+
+    Write-Host "==============================================================================" -ForegroundColor Green
+    Write-Host "               SELESAI - REKAPITULASI STANDARISASI LAB TI                      " -ForegroundColor Green
+    Write-Host "==============================================================================" -ForegroundColor Green
+    Write-Host "  Total Software Diproses   : $totalApps dari 16 Software Standar" -ForegroundColor White
+    Write-Host "  [OK] Berhasil / Terpasang : $berhasil Software" -ForegroundColor Green
+    if ($menunggu -gt 0) {
+        Write-Host "  [i] Menunggu Master Offline: $menunggu Software (Delphi / Proteus lisensi lab)" -ForegroundColor Yellow
+    }
+    if ($gagal -gt 0) {
+        Write-Host "  [!] Gagal / Butuh Tindakan : $gagal Software" -ForegroundColor Red
+    }
+    Write-Host "------------------------------------------------------------------------------" -ForegroundColor DarkGray
+    Write-Host ("  {0,-3} | {1,-30} | {2,-18} | {3}" -f "No", "Software Praktikum", "Status", "Keterangan") -ForegroundColor Cyan
+    Write-Host "------------------------------------------------------------------------------" -ForegroundColor DarkGray
+
+    $idx = 1
+    foreach ($item in $script:InstallResults) {
+        $color = "Green"
+        if ($item.Status -eq "BELUM TERSEDIA") { $color = "Yellow" }
+        elseif ($item.Status -eq "GAGAL") { $color = "Red" }
+        elseif ($item.Status -eq "SUDAH TERPASANG") { $color = "Cyan" }
+
+        $shortKet = if ($item.Keterangan.Length -gt 28) { $item.Keterangan.Substring(0, 25) + "..." } else { $item.Keterangan }
+        Write-Host ("  {0,-3} | {1,-30} | {2,-18} | {3}" -f $idx, $item.Name, $item.Status, $shortKet) -ForegroundColor $color
+        $idx++
+    }
+    Write-Host "==============================================================================`n" -ForegroundColor Green
 }
 
 # ==============================================================================
