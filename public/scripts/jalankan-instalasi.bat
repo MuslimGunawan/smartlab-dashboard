@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions
 cd /d "%~dp0"
-title Installer Otomatis Software Lab TI - UNIMAL [v3.2.0]
+title Installer Otomatis Software Lab TI - UNIMAL [v3.3.0]
 
 :: 1. Tentukan target file powershell utama
 set "TARGET_PS=%~dp0Apps\install-lab-software.ps1"

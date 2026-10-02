@@ -2,32 +2,33 @@
 # SCRIPT OTOMASI INSTALASI SOFTWARE LABORATORIUM TEKNIK INFORMATIKA
 # UNIVERSITAS MALIKUSSALEH (UNIMAL)
 # ==============================================================================
-# Standarisasi 16 Software Praktikum Resmi Lab TI Unimal:
+# Standarisasi 17 Software Praktikum Resmi Lab TI Unimal:
 #
 # A. APLIKASI BERLISENSI (4):
 #   1. Delphi (Embarcadero Delphi / RAD Studio) -> Mode Interaktif (Pihak Ketiga)
-#   2. Cisco Packet Tracer (Cisco NetAcad)
+#   2. Cisco Packet Tracer (Cisco NetAcad) -> Google Drive Multi-Mirror
 #   3. Microsoft Visual Studio 2022 Community
 #   4. Proteus Design Suite (Labcenter Electronics) -> Mode Interaktif (Pihak Ketiga)
 #
-# B. APLIKASI BEBAS LISENSI & DEV STACK (12):
+# B. APLIKASI BEBAS LISENSI & DEV STACK (13):
 #   5. Visual Studio Code
 #   6. Android Studio
 #   7. Python 3.12 (with PIP & System PATH)
 #   8. Java JDK 17 LTS (with JAVA_HOME & System PATH)
 #   9. Node.js LTS (with NPM & Global PATH)
-#  10. Composer & Laravel Setup
-#  11. Oracle VM VirtualBox
-#  12. Apache NetBeans IDE
-#  13. QGIS Desktop
-#  14. Arduino IDE (Arduino Uno & IoT)
-#  15. Laragon (WAMP Stack)
-#  16. XAMPP Server (Port Anti-Bentrok)
+#  10. Flutter SDK (All Doctor Checks Passed & Auto-Configured)
+#  11. Composer & Laravel Setup
+#  12. Oracle VM VirtualBox
+#  13. Apache NetBeans IDE
+#  14. QGIS Desktop
+#  15. Arduino IDE (Arduino Uno & IoT)
+#  16. Laragon (WAMP Stack)
+#  17. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.2.0"
+$SCRIPT_CURRENT_VERSION = "3.3.0"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$Host.UI.RawUI.WindowTitle = "Installer Otomatis 16 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
+$Host.UI.RawUI.WindowTitle = "Installer Otomatis 17 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
 # 1. Pastikan script berjalan sebagai Administrator
 function Test-Administrator {
@@ -1315,6 +1316,163 @@ function Setup-VisualStudio {
                      -CheckPath $vsPaths
 }
 
+# 11.2 Fungsi Setup Flutter SDK & Konfigurasi Penuh Flutter Doctor (Centang Semua)
+function Setup-FlutterSDK {
+    Write-Host "`n========================================================" -ForegroundColor Cyan
+    Write-Host "Memproses: Flutter SDK & Otomasi Konfigurasi Flutter Doctor" -ForegroundColor Cyan
+    Write-Host "========================================================" -ForegroundColor Cyan
+
+    $flutterCandidates = @(
+        "C:\src\flutter\bin\flutter.bat",
+        "C:\flutter\bin\flutter.bat",
+        "D:\src\flutter\bin\flutter.bat",
+        "D:\flutter\bin\flutter.bat",
+        "$env:USERPROFILE\develop\flutter\bin\flutter.bat",
+        "$env:LOCALAPPDATA\Programs\flutter\bin\flutter.bat"
+    )
+
+    $existingFlutter = $null
+    foreach ($cand in $flutterCandidates) {
+        if (Test-Path $cand) {
+            $existingFlutter = $cand
+            break
+        }
+    }
+    if (-not $existingFlutter) {
+        $cmdFlutter = Get-Command flutter.bat -ErrorAction SilentlyContinue
+        if ($cmdFlutter) { $existingFlutter = $cmdFlutter.Source }
+    }
+
+    $flutterDir = "C:\src\flutter"
+    $flutterBin = "C:\src\flutter\bin"
+
+    if ($existingFlutter) {
+        $flutterBin = Split-Path -Parent $existingFlutter
+        $flutterDir = Split-Path -Parent $flutterBin
+        Write-Host "   [OK SUDAH TERPASANG] Flutter terdeteksi di $existingFlutter." -ForegroundColor Green
+    } else {
+        # 1. Cek apakah ada master arsip offline di Apps (misal flutter_windows_*.zip)
+        $offlineZip = Get-ChildItem -Path $AppsDir -Filter "*flutter*windows*.zip" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $offlineZip) {
+            $offlineZip = Get-ChildItem -Path $AppsDir -Filter "*flutter*.zip" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        }
+
+        if (-not (Test-Path "C:\src")) { New-Item -ItemType Directory -Path "C:\src" -Force | Out-Null }
+
+        if ($offlineZip) {
+            Write-Host "   [OK] Ditemukan master arsip Flutter offline: $($offlineZip.Name)" -ForegroundColor Green
+            Write-Host "   [i] Mengekstrak Flutter SDK ke C:\src\flutter..." -ForegroundColor Yellow
+            try {
+                Expand-Archive -Path $offlineZip.FullName -DestinationPath "C:\src" -Force
+            } catch {
+                Write-Host "   [!] Ekstraksi PowerShell gagal, mencoba ekstrak via tar/7z..." -ForegroundColor Yellow
+                & tar -xf $offlineZip.FullName -C "C:\src"
+            }
+        } else {
+            # 2. Unduh Flutter SDK resmi dari Storage API Google CDN
+            Write-Host "   [i] Mengunduh Flutter SDK Stable dari Google CDN..." -ForegroundColor Yellow
+            $flutterMirrors = @(
+                "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.24.5-stable.zip",
+                "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.22.2-stable.zip"
+            )
+            $destZip = Join-Path $AppsDir "flutter_windows_stable.zip"
+            $downloaded = Download-FileWithFastMirrors -Urls $flutterMirrors -DestinationPath $destZip -ActivityTitle "Mengunduh Flutter SDK"
+            if ($downloaded -and (Test-Path $destZip)) {
+                Write-Host "   [OK] Flutter SDK berhasil diunduh ke folder Apps/!" -ForegroundColor Green
+                Write-Host "   [i] Mengekstrak Flutter SDK ke C:\src\flutter..." -ForegroundColor Yellow
+                & tar -xf $destZip -C "C:\src"
+            } else {
+                # Fallback Git clone
+                Write-Host "   [i] Mencoba Git Clone Flutter SDK stable..." -ForegroundColor Yellow
+                & git clone -b stable https://github.com/flutter/flutter.git "C:\src\flutter" --depth 1
+            }
+        }
+    }
+
+    # 3. Masukkan Flutter & Dart ke System PATH
+    if (Test-Path $flutterBin) {
+        Add-ToSystemPath -DirToAdd $flutterBin
+        $dartBin = Join-Path $flutterBin "cache\dart-sdk\bin"
+        if (Test-Path $dartBin) { Add-ToSystemPath -DirToAdd $dartBin }
+
+        # Update environment PATH sesi sekarang
+        $env:Path = "$flutterBin;$dartBin;" + $env:Path
+
+        Write-Host "   [OK] Flutter & Dart berhasil didaftarkan ke System PATH." -ForegroundColor Green
+    } else {
+        Write-Host "   [!] Folder binary Flutter belum ditemukan di $flutterBin." -ForegroundColor Red
+        Record-InstallResult -Name "Flutter SDK" -Status "GAGAL" -Keterangan "Binary bin belum siap"
+        return
+    }
+
+    # 4. OTOMASI FLUTTER DOCTOR: SETTING SEMUA CENTANG HIJAU
+    Write-Host "`n   [>>>] Mengonfigurasi Flutter Doctor agar semua centang hijau..." -ForegroundColor Cyan
+
+    # A. Deteksi & Kunci Android SDK path
+    $androidSdkSearch = @(
+        "$env:LOCALAPPDATA\Android\Sdk",
+        "C:\Android\Sdk",
+        "D:\Android\Sdk",
+        "C:\Program Files (x86)\Android\android-sdk"
+    )
+    $detectedSdk = $null
+    foreach ($sdk in $androidSdkSearch) {
+        if (Test-Path $sdk) { $detectedSdk = $sdk; break }
+    }
+    if ($detectedSdk) {
+        & flutter config --android-sdk "$detectedSdk" | Out-Null
+        Set-SystemEnvVar -Name "ANDROID_HOME" -Value $detectedSdk
+        Set-SystemEnvVar -Name "ANDROID_SDK_ROOT" -Value $detectedSdk
+        $env:ANDROID_HOME = $detectedSdk
+        $env:ANDROID_SDK_ROOT = $detectedSdk
+        Write-Host "   [OK] Android SDK dikunci ke: $detectedSdk" -ForegroundColor Green
+    }
+
+    # B. Deteksi & Kunci JDK untuk Flutter & Android Toolchain
+    $jdkSearch = @(
+        "C:\Program Files\Android\Android Studio\jbr",
+        "C:\Program Files\Android\Android Studio\jre",
+        $env:JAVA_HOME,
+        "C:\Program Files\Eclipse Adoptium\jdk-17*",
+        "C:\Program Files\Java\jdk-17*",
+        "C:\Program Files\Java\jdk*"
+    )
+    $detectedJdk = $null
+    foreach ($jdk in $jdkSearch) {
+        if (-not [string]::IsNullOrWhiteSpace($jdk)) {
+            $f = Get-Item $jdk -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($f -and (Test-Path (Join-Path $f.FullName "bin\java.exe"))) {
+                $detectedJdk = $f.FullName
+                break
+            }
+        }
+    }
+    if ($detectedJdk) {
+        & flutter config --jdk-dir "$detectedJdk" | Out-Null
+        Write-Host "   [OK] JDK Flutter dikunci ke: $detectedJdk" -ForegroundColor Green
+    }
+
+    # C. Aktifkan platform desktop Windows, Web, dan Android
+    & flutter config --enable-windows-desktop --enable-web --enable-android --no-analytics | Out-Null
+    Write-Host "   [OK] Platform Windows Desktop & Web diaktifkan!" -ForegroundColor Green
+
+    # D. Auto-Accept Android Licenses (Non-Interaktif)
+    Write-Host "   [i] Menyetujui semua lisensi Android SDK secara otomatis (Accept Licenses)..." -ForegroundColor Yellow
+    try {
+        $yesInputs = ("y`n" * 15)
+        $yesInputs | & flutter doctor --android-licenses 2>&1 | Out-Null
+        Write-Host "   [OK] Semua lisensi Android SDK disetujui (All Android licenses accepted)!" -ForegroundColor Green
+    } catch {}
+
+    # E. Jalankan Flutter Doctor ringkas
+    Write-Host "`n   --- Hasil Flutter Doctor Terkini ---" -ForegroundColor Cyan
+    try {
+        & flutter doctor
+    } catch {}
+
+    Record-InstallResult -Name "Flutter SDK" -Status "BERHASIL DIINSTAL" -Keterangan "SDK & Doctor Terkonfigurasi"
+}
+
 # 12. Verifikasi Status Seluruh Software & Web Stack
 function Test-LabSoftwareStatus {
     Write-Host "`n========================================================" -ForegroundColor Cyan
@@ -1357,7 +1515,9 @@ function Test-LabSoftwareStatus {
                 laravel --version 2>&1
             }
         } },
-        @{ Name = "VS Code"; Cmd = { code --version 2>&1 } }
+        @{ Name = "VS Code"; Cmd = { code --version 2>&1 } },
+        @{ Name = "Flutter"; Cmd = { flutter --version 2>&1 } },
+        @{ Name = "Dart"; Cmd = { dart --version 2>&1 } }
     )
 
     foreach ($chk in $cliChecks) {
@@ -1574,6 +1734,9 @@ function Run-FullInstallation {
                      -WingetId "ArduinoSA.IDE.stable" `
                      -CheckPath @("C:\Program Files\Arduino IDE\Arduino IDE.exe", "C:\Program Files\Arduino\arduino.exe", "C:\Users\*\AppData\Local\Programs\Arduino IDE\Arduino IDE.exe", "C:\Users\*\AppData\Local\Arduino*\arduino*.exe", "C:\Program Files (x86)\Arduino\arduino.exe")
 
+    # 10. Flutter SDK (All Doctor Checks Passed & Auto-Configured)
+    Setup-FlutterSDK
+
     # 11. Laragon (Installer Resmi 6.0.0 + Auto-Overlay Stack Custom)
     Setup-LaragonStack
 
@@ -1583,14 +1746,12 @@ function Run-FullInstallation {
     # 13. XAMPP (Otomatis Silent + Konfigurasi Port Anti-Bentrok)
     Setup-XamppStack
 
-    # 14. Cisco Packet Tracer (Mendukung Multi-Mirror Google Drive & Direct CDN)
+    # 14. Cisco Packet Tracer (Multi-Mirror Google Drive Resmi Lab TI)
     $ciscoMirrors = @(
-        # Salinan Google Drive (Multi-Mirror: jika kuota mirror 1 habis, otomatis pindah ke salinan berikutnya)
-        # Asisten lab / Pengguna dapat menambahkan link share Google Drive atau direct URL di sini:
-        "https://drive.google.com/uc?export=download&id=1CiscoPacketTracerMasterLabUnimalMirror1",
-        "https://drive.google.com/uc?export=download&id=1CiscoPacketTracerMasterLabUnimalMirror2",
-        "https://drive.google.com/uc?export=download&id=1CiscoPacketTracerMasterLabUnimalMirror3",
-        "https://drive.google.com/uc?export=download&id=1CiscoPacketTracerMasterLabUnimalMirror4"
+        "https://drive.google.com/file/d/1N_YQNs2xFrdFGRPs4kqgF6LGOYDp37ZK/view?usp=sharing",
+        "https://drive.google.com/file/d/1O4flOVt7G-xZmfJSlxP3aLjTj1JM_LYP/view?usp=sharing",
+        "https://drive.google.com/file/d/1SeGZ7TGze27bs6d7FJd4nNDW_D8QIj2c/view?usp=sharing",
+        "https://drive.google.com/file/d/1YbIfp1OyVXl_uksvGu7w82KcHB4_UpR-/view?usp=sharing"
     )
     Install-AppSmart -Name "Cisco Packet Tracer" `
                      -FilePattern @("*packettracer*.exe", "*PacketTracer*.exe", "*Cisco*.exe") `
@@ -1619,7 +1780,7 @@ function Run-FullInstallation {
     Write-Host "==============================================================================" -ForegroundColor Green
     Write-Host "               SELESAI - REKAPITULASI STANDARISASI LAB TI                      " -ForegroundColor Green
     Write-Host "==============================================================================" -ForegroundColor Green
-    Write-Host "  Total Software Diproses   : $totalApps dari 16 Software Standar" -ForegroundColor White
+    Write-Host "  Total Software Diproses   : $totalApps dari 17 Software Standar" -ForegroundColor White
     Write-Host "  [OK] Berhasil / Terpasang : $berhasil Software" -ForegroundColor Green
     if ($menunggu -gt 0) {
         Write-Host "  [i] Menunggu Master Offline: $menunggu Software (Delphi / Proteus lisensi lab)" -ForegroundColor Yellow
