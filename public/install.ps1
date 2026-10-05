@@ -29,7 +29,7 @@
 #  20. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.13"
+$SCRIPT_CURRENT_VERSION = "3.3.14"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 20 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -716,6 +716,14 @@ function Install-AppSmart {
         foreach ($pat in $patterns) {
             $candidates = Get-ChildItem -Path $AppsDir -Filter $pat -File -Recurse -ErrorAction SilentlyContinue
             foreach ($cand in $candidates) {
+                # Cegah salah deteksi binary portable atau tools internal (bukan installer resmi)
+                if ($cand.Name -in @("git.exe", "code.exe", "laragon.exe", "php.exe", "python.exe", "node.exe", "composer.phar")) {
+                    continue
+                }
+                if ($cand.FullName -match '(?i)[\/\\](bin|cmd|usr|node_modules|vendor)[\/\\]') {
+                    continue
+                }
+
                 # Validasi kelayakan: file binary installer (.exe/.msi/.zip/.rar) harus bukan file HTML rusak/error
                 if ($cand.Length -lt 512000) { # kurang dari 500KB
                     $isHtmlErr = $false
@@ -1015,15 +1023,16 @@ function Setup-Git {
         "https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/Git-2.47.1-64-bit.exe",
         "https://github.com/git-for-windows/git/releases/download/v2.44.0.windows.1/Git-2.44.0-64-bit.exe"
     )
+    # HANYA periksa instalasi resmi Git for Windows (C:\Program Files\Git)
+    # JANGAN sertakan C:\laragon\bin\git agar Git resmi tetap terpasang di Windows (Control Panel & Start Menu)
     $gitCheckPaths = @(
         "C:\Program Files\Git\cmd\git.exe",
         "C:\Program Files\Git\bin\git.exe",
-        "C:\Program Files (x86)\Git\cmd\git.exe",
-        "C:\laragon\bin\git\cmd\git.exe"
+        "C:\Program Files (x86)\Git\cmd\git.exe"
     )
 
     Install-AppSmart -Name "Git for Windows" `
-                     -FilePattern @("*Git*64-bit*.exe", "*Git*.exe") `
+                     -FilePattern @("Git-*-64-bit.exe", "Git-*.exe", "*Git*Setup*.exe") `
                      -DownloadUrls $gitMirrors `
                      -SilentArgs "/VERYSILENT /NORESTART /NOCANCEL /SP- /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS" `
                      -WingetId "Git.Git" `
@@ -1040,10 +1049,28 @@ function Setup-Git {
         $gitCmd = Join-Path $gitRoot "cmd"
         $gitBin = Join-Path $gitRoot "bin"
         $gitUsrBin = Join-Path $gitRoot "usr\bin"
+        $gitBashExe = Join-Path $gitRoot "git-bash.exe"
+        $gitGuiExe = Join-Path $gitRoot "cmd\git-gui.exe"
 
         if (Test-Path $gitCmd) { Add-ToSystemPath -DirToAdd $gitCmd }
         if (Test-Path $gitBin) { Add-ToSystemPath -DirToAdd $gitBin }
         if (Test-Path $gitUsrBin) { Add-ToSystemPath -DirToAdd $gitUsrBin }
+
+        # Buat Pintasan Start Menu & Desktop resmi agar langsung muncul di Pencarian Windows
+        if (Test-Path $gitBashExe) {
+            Create-AppShortcut -TargetExe $gitBashExe -ShortcutName "Git Bash"
+        }
+        if (Test-Path $gitGuiExe) {
+            Create-AppShortcut -TargetExe $gitGuiExe -ShortcutName "Git GUI"
+        }
+
+        # Daftarkan ke Windows App Paths agar bisa dipanggil langsung dari Run (Win+R) git.exe
+        try {
+            $regAppPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\git.exe"
+            if (-not (Test-Path $regAppPath)) { New-Item -Path $regAppPath -Force | Out-Null }
+            Set-ItemProperty -Path $regAppPath -Name "(Default)" -Value "$gitCmd\git.exe" -Force
+            Set-ItemProperty -Path $regAppPath -Name "Path" -Value "$gitCmd;$gitBin;$gitUsrBin" -Force
+        } catch {}
 
         # Update environment PATH sesi sekarang secara instan agar dart/flutter/composer langsung mengenal git
         $pathsToPrepend = @($gitCmd, $gitBin, $gitUsrBin) | Where-Object { Test-Path $_ }
@@ -1052,7 +1079,7 @@ function Setup-Git {
                 $env:Path = "$pt;" + $env:Path
             }
         }
-        Write-Host "   [OK] Git for Windows berhasil didaftarkan ke System PATH ($gitFound)!" -ForegroundColor Green
+        Write-Host "   [OK] Git for Windows resmi aktif dan terintegrasi di Windows ($gitFound)!" -ForegroundColor Green
     }
 }
 
@@ -2965,7 +2992,7 @@ function Start-DownloadOnlyMaster {
         },
         @{
             Name = "Git for Windows"
-            FilePattern = @("*Git*64-bit*.exe", "*Git*.exe")
+            FilePattern = @("Git-*-64-bit.exe", "Git-*.exe", "*Git*Setup*.exe")
             DestFile = "Git-2.48.1-64-bit.exe"
             Urls = @(
                 "https://github.com/git-for-windows/git/releases/download/v2.48.1.windows.1/Git-2.48.1-64-bit.exe",
