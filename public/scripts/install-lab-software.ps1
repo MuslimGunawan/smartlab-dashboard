@@ -29,7 +29,7 @@
 #  20. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.11"
+$SCRIPT_CURRENT_VERSION = "3.3.12"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 20 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -53,7 +53,7 @@ if (-not $script:IsAdmin) {
         if ($spPath -and (Test-Path $spPath)) {
             $p = Start-Process powershell.exe -ArgumentList ("-NoProfile -ExecutionPolicy Bypass -NoExit -File `"{0}`"" -f $spPath) -Verb RunAs -PassThru -ErrorAction Stop
             if ($p -and $p.Id) {
-                exit 0
+                [System.Environment]::Exit(0)
             }
         }
     } catch {
@@ -258,7 +258,7 @@ function Check-ScriptSelfUpdate {
                     } else {
                         Start-Process powershell.exe -ArgumentList ("-NoProfile -ExecutionPolicy Bypass -NoExit -File `"{0}`"" -f $scriptFile)
                     }
-                    exit
+                    [System.Environment]::Exit(0)
                 } else {
                     Write-Host " [!] Verifikasi versi gagal. Melanjutkan dengan versi saat ini..." -ForegroundColor Yellow
                 }
@@ -3196,7 +3196,7 @@ while ($running) {
             Write-Host "Keluar dari skrip otomasi SmartLab. Terima kasih." -ForegroundColor Green
             Wait-EnterOnly -PromptMessage "[Tekan tombol ENTER untuk menutup jendela ini...]"
             $running = $false
-            exit 0
+            [System.Environment]::Exit(0)
         }
         default {
             Write-Host "Pilihan tidak valid. Silakan ketik angka 1, 2, 3, atau 4." -ForegroundColor Red
