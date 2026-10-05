@@ -29,7 +29,7 @@
 #  20. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.10"
+$SCRIPT_CURRENT_VERSION = "3.3.11"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 20 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -1962,6 +1962,151 @@ function Setup-VirtualBox {
     }
 }
 
+# 11.0 Fungsi Setup Apache NetBeans (Direct High-Speed GitHub Releases CDN & Bundled JDK 26)
+function Setup-NetBeans {
+    Write-Host "`n========================================================" -ForegroundColor Cyan
+    Write-Host "Memproses: Apache NetBeans IDE (High-Speed CDN Mirror)" -ForegroundColor Cyan
+    Write-Host "========================================================" -ForegroundColor Cyan
+
+    $nbCheckPaths = @(
+        "C:\Program Files\Apache NetBeans*\bin\netbeans*.exe",
+        "C:\Program Files\*NetBeans*\netbeans\bin\netbeans*.exe",
+        "C:\Program Files\*NetBeans*\bin\netbeans*.exe",
+        "C:\Program Files (x86)\*NetBeans*\netbeans\bin\netbeans*.exe",
+        "C:\Program Files (x86)\*NetBeans*\bin\netbeans*.exe",
+        "C:\Program Files\Codelerity\*NetBeans*\bin\netbeans*.exe",
+        "$env:LOCALAPPDATA\Programs\*NetBeans*\bin\netbeans*.exe"
+    )
+
+    $alreadyInstalled = $null
+    foreach ($cp in $nbCheckPaths) {
+        $alreadyInstalled = Get-ChildItem -Path $cp -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $alreadyInstalled) {
+            $alreadyInstalled = Get-Item -Path $cp -ErrorAction SilentlyContinue | Select-Object -First 1
+        }
+        if ($alreadyInstalled) { break }
+    }
+
+    if ($alreadyInstalled) {
+        Write-Host "   [OK SUDAH TERPASANG] Apache NetBeans terdeteksi di $($alreadyInstalled.FullName)" -ForegroundColor Green
+        Create-AppShortcut -TargetExe $alreadyInstalled.FullName -ShortcutName "Apache NetBeans"
+        Write-Host "   -> Melewati proses instalasi (Skip)." -ForegroundColor DarkGray
+        Record-InstallResult -Name "Apache NetBeans IDE" -Status "SUDAH TERPASANG" -Keterangan "Terdeteksi aktif di sistem (Skip)"
+        return
+    }
+
+    # Deteksi JDK sistem untuk pengikatan netbeans_jdkhome jika diperlukan
+    $nbJdkPath = $null
+    $nbJdkCandidates = @(
+        $env:JAVA_HOME,
+        "C:\Program Files\Eclipse Adoptium\jdk-17*",
+        "C:\Program Files\Eclipse Adoptium\jdk-2*",
+        "C:\Program Files\Java\jdk-17*",
+        "C:\Program Files\Java\jdk-2*",
+        "C:\Program Files\BellSoft\LibericaJDK-*"
+    )
+    foreach ($cand in $nbJdkCandidates) {
+        if (-not [string]::IsNullOrWhiteSpace($cand)) {
+            $f = Get-Item $cand -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($f -and (Test-Path (Join-Path $f.FullName "bin\java.exe"))) {
+                $nbJdkPath = $f.FullName
+                break
+            }
+        }
+    }
+
+    # URL Unduhan Cepat: Prioritas utama ke GitHub Releases CDN resmi (Codelerity NBPackage Apache NetBeans 31 + Bundled JDK 26)
+    # Server GitHub Release Assets menggunakan CDN Global Fastly/CloudFront (kecepatan 10-50+ MB/s di Indonesia, bebas throttling)
+    $netbeansMirrors = @(
+        "https://github.com/codelerity/netbeans-packages/releases/download/v31-build1/Apache-NetBeans-31.exe",
+        "https://github.com/apache/netbeans/releases/download/25/Apache-NetBeans-25-bin-windows-x64.exe",
+        "https://archive.apache.org/dist/netbeans/netbeans-installers/25/Apache-NetBeans-25-bin-windows-x64.exe",
+        "https://dlcdn.apache.org/netbeans/netbeans-installers/25/Apache-NetBeans-25-bin-windows-x64.exe"
+    )
+
+    # 1. Cek apakah master offline sudah ada di folder Apps/
+    $offlineFile = $null
+    $nbPatterns = @("*NetBeans*31*.exe", "*NetBeans*.exe", "*Apache-NetBeans*.exe")
+    foreach ($pat in $nbPatterns) {
+        $cands = Get-ChildItem -Path $AppsDir -Filter $pat -File -Recurse -ErrorAction SilentlyContinue
+        foreach ($c in $cands) {
+            if ($c.Length -gt 50MB) {
+                $offlineFile = $c
+                break
+            }
+        }
+        if ($offlineFile) { break }
+    }
+
+    # 2. Jika belum ada di Apps/, unduh langsung dari High-Speed CDN Mirror
+    if (-not $offlineFile) {
+        $destFile = Join-Path $AppsDir "Apache-NetBeans-31.exe"
+        Write-Host "   [i] Mengunduh Apache NetBeans via Direct High-Speed CDN Mirror (GitHub Releases)..." -ForegroundColor Yellow
+        $downloaded = Download-FileWithFastMirrors -Urls $netbeansMirrors -DestinationPath $destFile -ActivityTitle "Mengunduh Apache NetBeans IDE"
+        if ($downloaded -and (Test-Path $script:LastDownloadedFile)) {
+            $offlineFile = Get-Item $script:LastDownloadedFile
+        }
+    }
+
+    # 3. Jalankan instalasi cerdas sesuai format installer
+    if ($offlineFile -and (Test-Path $offlineFile.FullName)) {
+        Write-Host "   [i] Memulai instalasi otomatis: $($offlineFile.Name)..." -ForegroundColor Yellow
+        $silentArgs = ""
+        if ($offlineFile.Name -match "31" -or $offlineFile.Name -match "codelerity") {
+            # Inno Setup (NBPackage)
+            $silentArgs = "/VERYSILENT /NORESTART /SUPPRESSMSGBOXES /SP-"
+        } else {
+            # Official Apache install4j
+            $silentArgs = "--silent"
+            if ($nbJdkPath) {
+                $silentArgs += " --jdkhome `"$nbJdkPath`""
+            }
+        }
+
+        $argsList = Convert-ArgsToArray $silentArgs
+        $proc = Start-Process -FilePath $offlineFile.FullName -ArgumentList $argsList -Wait -PassThru
+
+        if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
+            Write-Host "   [OK] Apache NetBeans IDE berhasil diinstal!" -ForegroundColor Green
+            Record-InstallResult -Name "Apache NetBeans IDE" -Status "BERHASIL DIINSTAL" -Keterangan "Terpasang via High-Speed CDN ($($offlineFile.Name))"
+        } else {
+            Write-Host "   [!] Installer NetBeans selesai dengan kode: $($proc.ExitCode)" -ForegroundColor Yellow
+            Record-InstallResult -Name "Apache NetBeans IDE" -Status "GAGAL" -Keterangan "Exit Code: $($proc.ExitCode)"
+        }
+    } else {
+        # Fallback winget
+        Write-Host "   [!] Master offline tidak ditemukan. Mencoba fallback Winget..." -ForegroundColor Yellow
+        Install-AppSmart -Name "Apache NetBeans IDE" -WingetId "Apache.NetBeans" -SilentArgs "--silent"
+    }
+
+    # 4. Kunci netbeans.conf jika diperlukan
+    if ($nbJdkPath) {
+        $nbConfs = Get-ChildItem -Path "C:\Program Files\*NetBeans*\etc\netbeans.conf", "C:\Program Files (x86)\*NetBeans*\etc\netbeans.conf" -File -Recurse -ErrorAction SilentlyContinue
+        foreach ($cfg in $nbConfs) {
+            try {
+                $cfgText = [System.IO.File]::ReadAllText($cfg.FullName)
+                $escapedJdk = $nbJdkPath.Replace('\', '/')
+                if ($cfgText -match '(?m)^#?\s*netbeans_jdkhome=') {
+                    $newCfgText = $cfgText -replace '(?m)^#?\s*netbeans_jdkhome=.*$', "netbeans_jdkhome=`"$escapedJdk`""
+                } else {
+                    $newCfgText = $cfgText + "`r`nnetbeans_jdkhome=`"$escapedJdk`"`r`n"
+                }
+                [System.IO.File]::WriteAllText($cfg.FullName, $newCfgText)
+                Write-Host "   [OK] netbeans.conf berhasil dikonfigurasi ke JDK: $nbJdkPath" -ForegroundColor Green
+            } catch {}
+        }
+    }
+
+    # Buat shortcut jika belum ada
+    foreach ($cp in $nbCheckPaths) {
+        $f = Get-ChildItem -Path $cp -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($f) {
+            Create-AppShortcut -TargetExe $f.FullName -ShortcutName "Apache NetBeans"
+            break
+        }
+    }
+}
+
 # 11.1 Fungsi Setup Microsoft Visual Studio 2022 Community (Desktop C++ Auto-Layout & Offline Cache)
 function Setup-VisualStudio {
     Write-Host "`n========================================================" -ForegroundColor Cyan
@@ -2408,7 +2553,7 @@ function Test-LabSoftwareStatus {
         @{ Name = "Android Studio";      Path = @("C:\Program Files\Android\Android Studio\bin\studio64.exe", "C:\Program Files (x86)\Android\Android Studio\bin\studio64.exe", "C:\Users\*\AppData\Local\Programs\Android\Android Studio\bin\studio64.exe"); Reg = "*Android Studio*" },
         @{ Name = "Oracle VirtualBox";   Path = @("C:\Program Files\Oracle\VirtualBox\VirtualBox.exe", "C:\Program Files (x86)\Oracle\VirtualBox\VirtualBox.exe"); Reg = "*VirtualBox*" },
         @{ Name = "VBox Extension Pack"; Path = @("C:\Program Files\Oracle\VirtualBox\ExtensionPacks\Oracle_VM_VirtualBox_Extension_Pack\ExtPack.xml"); Reg = "*VirtualBox Extension Pack*" },
-        @{ Name = "Apache NetBeans";     Path = @("C:\Program Files\*NetBeans*\netbeans\bin\netbeans*.exe", "C:\Program Files\*NetBeans*\bin\netbeans*.exe", "C:\Program Files\Apache NetBeans*\bin\netbeans*.exe", "C:\Program Files (x86)\*NetBeans*\netbeans\bin\netbeans*.exe", "C:\Program Files (x86)\*NetBeans*\bin\netbeans*.exe"); Reg = "*NetBeans*" },
+        @{ Name = "Apache NetBeans";     Path = @("C:\Program Files\*NetBeans*\netbeans\bin\netbeans*.exe", "C:\Program Files\*NetBeans*\bin\netbeans*.exe", "C:\Program Files\Apache NetBeans*\bin\netbeans*.exe", "C:\Program Files\Codelerity\*NetBeans*\bin\netbeans*.exe", "C:\Program Files (x86)\*NetBeans*\netbeans\bin\netbeans*.exe", "C:\Program Files (x86)\*NetBeans*\bin\netbeans*.exe", "$env:LOCALAPPDATA\Programs\*NetBeans*\bin\netbeans*.exe"); Reg = "*NetBeans*" },
         @{ Name = "QGIS Desktop";        Path = @("C:\Program Files\QGIS *\bin\qgis-bin.exe", "C:\Program Files\QGIS *\bin\qgis.exe"); Reg = "*QGIS*" },
         @{ Name = "Arduino IDE";         Path = @("C:\Program Files\Arduino IDE\Arduino IDE.exe", "C:\Program Files\Arduino\arduino.exe", "C:\Users\*\AppData\Local\Programs\Arduino IDE\Arduino IDE.exe", "C:\Users\*\AppData\Local\Arduino*\arduino*.exe", "C:\Program Files (x86)\Arduino\arduino.exe"); Reg = "*Arduino*" },
         @{ Name = "Laragon";             Path = @("C:\laragon\laragon.exe", "D:\laragon\laragon.exe", "E:\laragon\laragon.exe"); Reg = "*Laragon*" },
@@ -2520,63 +2665,8 @@ function Run-FullInstallation {
     # 8. Oracle VM VirtualBox & Extension Pack (Otomatis Silent dengan Multi-Mirror Google Drive & CDN)
     Setup-VirtualBox
 
-    # 9. Apache NetBeans (Otomatis Silent dengan Java JDK 17+ Terdeteksi & Multi-Mirror Cepat)
-    $nbJdkPath = $null
-    $nbJdkCandidates = @(
-        $env:JAVA_HOME,
-        "C:\Program Files\Eclipse Adoptium\jdk-17*",
-        "C:\Program Files\Eclipse Adoptium\jdk-2*",
-        "C:\Program Files\Java\jdk-17*",
-        "C:\Program Files\Java\jdk-2*",
-        "C:\Program Files\BellSoft\LibericaJDK-*"
-    )
-    foreach ($cand in $nbJdkCandidates) {
-        if (-not [string]::IsNullOrWhiteSpace($cand)) {
-            $f = Get-Item $cand -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($f -and (Test-Path (Join-Path $f.FullName "bin\java.exe"))) {
-                $nbJdkPath = $f.FullName
-                break
-            }
-        }
-    }
-
-    $nbSilentArgs = "--silent"
-    if ($nbJdkPath) {
-        $nbSilentArgs += " --jdkhome `"$nbJdkPath`""
-        Write-Host "   [i] Menghubungkan Apache NetBeans ke JDK: $nbJdkPath" -ForegroundColor Cyan
-    }
-
-    $netbeansMirrors = @(
-        "https://dlcdn.apache.org/netbeans/netbeans-installers/25/Apache-NetBeans-25-bin-windows-x64.exe",
-        "https://github.com/apache/netbeans/releases/download/25/Apache-NetBeans-25-bin-windows-x64.exe",
-        "https://archive.apache.org/dist/netbeans/netbeans-installers/25/Apache-NetBeans-25-bin-windows-x64.exe"
-    )
-
-    Install-AppSmart -Name "Apache NetBeans IDE" `
-                     -FilePattern @("*NetBeans*.exe", "*Apache-NetBeans*.exe") `
-                     -DownloadUrls $netbeansMirrors `
-                     -SilentArgs $nbSilentArgs `
-                     -WingetId "Apache.NetBeans" `
-                     -WingetArgs "--override `"$nbSilentArgs`"" `
-                     -CheckPath @("C:\Program Files\*NetBeans*\netbeans\bin\netbeans*.exe", "C:\Program Files\*NetBeans*\bin\netbeans*.exe", "C:\Program Files\Apache NetBeans*\bin\netbeans*.exe", "C:\Program Files (x86)\*NetBeans*\netbeans\bin\netbeans*.exe", "C:\Program Files (x86)\*NetBeans*\bin\netbeans*.exe")
-
-    # Kunci path netbeans_jdkhome di netbeans.conf agar tidak memunculkan popup Java saat dibuka
-    if ($nbJdkPath) {
-        $nbConfs = Get-ChildItem -Path "C:\Program Files\*NetBeans*\etc\netbeans.conf" -File -Recurse -ErrorAction SilentlyContinue
-        foreach ($cfg in $nbConfs) {
-            try {
-                $cfgText = [System.IO.File]::ReadAllText($cfg.FullName)
-                $escapedJdk = $nbJdkPath.Replace('\', '/')
-                if ($cfgText -match '(?m)^#?\s*netbeans_jdkhome=') {
-                    $newCfgText = $cfgText -replace '(?m)^#?\s*netbeans_jdkhome=.*$', "netbeans_jdkhome=`"$escapedJdk`""
-                } else {
-                    $newCfgText = $cfgText + "`r`nnetbeans_jdkhome=`"$escapedJdk`"`r`n"
-                }
-                [System.IO.File]::WriteAllText($cfg.FullName, $newCfgText)
-                Write-Host "   [OK] netbeans.conf berhasil dikunci ke JDK: $nbJdkPath" -ForegroundColor Green
-            } catch {}
-        }
-    }
+    # 9. Apache NetBeans (Otomatis Silent dengan Direct High-Speed GitHub Releases CDN & Bundled JDK)
+    Setup-NetBeans
 
     # 10. Android Studio (Otomatis Silent dengan Multi-CDN Google Resmi & Winget Fallback)
     $androidStudioMirrors = @(
@@ -2783,10 +2873,14 @@ function Start-DownloadOnlyMaster {
             )
         },
         @{
-            Name = "Apache NetBeans IDE 25"
-            FilePattern = @("*NetBeans*.exe", "*Apache-NetBeans*.exe")
-            DestFile = "Apache-NetBeans-25-bin-windows-x64.exe"
-            Urls = @("https://dlcdn.apache.org/netbeans/netbeans-installers/25/Apache-NetBeans-25-bin-windows-x64.exe", "https://github.com/apache/netbeans/releases/download/25/Apache-NetBeans-25-bin-windows-x64.exe")
+            Name = "Apache NetBeans IDE (High-Speed GitHub CDN / Bundled JDK)"
+            FilePattern = @("*NetBeans*31*.exe", "*NetBeans*.exe", "*Apache-NetBeans*.exe")
+            DestFile = "Apache-NetBeans-31.exe"
+            Urls = @(
+                "https://github.com/codelerity/netbeans-packages/releases/download/v31-build1/Apache-NetBeans-31.exe",
+                "https://github.com/apache/netbeans/releases/download/25/Apache-NetBeans-25-bin-windows-x64.exe",
+                "https://archive.apache.org/dist/netbeans/netbeans-installers/25/Apache-NetBeans-25-bin-windows-x64.exe"
+            )
         },
         @{
             Name = "Android Studio"
