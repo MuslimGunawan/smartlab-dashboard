@@ -28,7 +28,7 @@
 #  19. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.6"
+$SCRIPT_CURRENT_VERSION = "3.3.7"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 19 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -1649,6 +1649,109 @@ function Setup-ComposerAndLaravel {
     Sync-UnifiedLaragonPhp
 }
 
+# 10.1 Fungsi Setup Oracle VM VirtualBox & Extension Pack (Google Drive Multi-Mirror Kencang)
+function Setup-VirtualBox {
+    Write-Host "`n========================================================" -ForegroundColor Cyan
+    Write-Host "Memproses: Oracle VM VirtualBox & Extension Pack" -ForegroundColor Cyan
+    Write-Host "========================================================" -ForegroundColor Cyan
+
+    $vboxPaths = @(
+        "C:\Program Files\Oracle\VirtualBox\VirtualBox.exe",
+        "C:\Program Files (x86)\Oracle\VirtualBox\VirtualBox.exe"
+    )
+    $installedVbox = $null
+    foreach ($vp in $vboxPaths) {
+        if (Test-Path $vp) { $installedVbox = $vp; break }
+    }
+
+    # Mirror Google Drive prioritas utama (super cepat di lab) + cadangan resmi Oracle CDN
+    $vboxMirrors = @(
+        "https://drive.google.com/file/d/18VMaCMVlP5-1yoUU0e90Bjy3pqUzqV8i/view?usp=sharing",
+        "https://drive.google.com/file/d/1O0GSKjOzYf7b5cC5hlIsa10ouzMtrS7D/view?usp=sharing",
+        "https://drive.google.com/file/d/1yR9Xc2bRcEwQBz7o3IrMZ0Ustx5jd5fI/view?usp=sharing",
+        "https://drive.google.com/file/d/1FqHbWQdaRxOoO0woLB-UZjlXFeWJ5VnA/view?usp=sharing",
+        "https://download.virtualbox.org/virtualbox/7.2.20/VirtualBox-7.2.20-175154-Win.exe",
+        "https://download.virtualbox.org/virtualbox/7.1.8/VirtualBox-7.1.8-168469-Win.exe",
+        "https://download.virtualbox.org/virtualbox/7.1.6/VirtualBox-7.1.6-167084-Win.exe"
+    )
+
+    if (-not $installedVbox) {
+        Install-AppSmart -Name "Oracle VM VirtualBox" `
+                         -FilePattern @("*VirtualBox*.exe", "*VirtualBox*.msi") `
+                         -DownloadUrls $vboxMirrors `
+                         -SilentArgs "--silent" `
+                         -WingetId "Oracle.VirtualBox" `
+                         -CheckPath $vboxPaths
+        foreach ($vp in $vboxPaths) {
+            if (Test-Path $vp) { $installedVbox = $vp; break }
+        }
+    } else {
+        Write-Host "   [OK SUDAH TERPASANG] Oracle VM VirtualBox terdeteksi di $installedVbox." -ForegroundColor Green
+        Create-AppShortcut -TargetExe $installedVbox -ShortcutName "Oracle VM VirtualBox"
+        Record-InstallResult -Name "Oracle VM VirtualBox" -Status "SUDAH TERPASANG" -Keterangan "Terdeteksi aktif di sistem (Skip)"
+    }
+
+    # Pemasangan VirtualBox Extension Pack jika VirtualBox sudah terpasang
+    if ($installedVbox) {
+        $vboxDir = Split-Path -Parent $installedVbox
+        $vboxManage = Join-Path $vboxDir "VBoxManage.exe"
+        if (Test-Path $vboxManage) {
+            Write-Host "`n   [>>>] Memeriksa Oracle VM VirtualBox Extension Pack..." -ForegroundColor Cyan
+            
+            # Cek apakah Extension Pack sudah terdaftar di VirtualBox
+            $extInstalled = $false
+            try {
+                $extList = & $vboxManage list extpacks 2>&1 | Out-String
+                if ($extList -match "Oracle VM VirtualBox Extension Pack") {
+                    $extInstalled = $true
+                    Write-Host "   [OK SUDAH TERPASANG] Oracle VM VirtualBox Extension Pack aktif terpasang!" -ForegroundColor Green
+                }
+            } catch {}
+
+            if (-not $extInstalled) {
+                # Cari berkas offline .vbox-extpack di Apps/
+                $extPackFile = Get-ChildItem -Path $AppsDir -Filter "*.vbox-extpack" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+
+                if (-not $extPackFile -or ($extPackFile.Length -lt 1048576)) {
+                    Write-Host "   [i] Mengunduh Oracle VM VirtualBox Extension Pack (Google Drive Multi-Mirror)..." -ForegroundColor Yellow
+                    $extPackMirrors = @(
+                        "https://drive.google.com/file/d/1g0Ut2twJy71GQ4b6-4Nj6_3e99WCxWFY/view?usp=sharing",
+                        "https://drive.google.com/file/d/1T3LOPKLTCx6JP0IZYBrJKaVaiqawXv6c/view?usp=sharing",
+                        "https://drive.google.com/file/d/1bL621GdJ7tN1e3_IAClmwyIdyd5HcVxb/view?usp=sharing",
+                        "https://drive.google.com/file/d/1dlEPu54jB1ai3McvksX15axwGONs64g-/view?usp=sharing",
+                        "https://download.virtualbox.org/virtualbox/7.2.20/Oracle_VirtualBox_Extension_Pack-7.2.20.vbox-extpack",
+                        "https://download.virtualbox.org/virtualbox/7.1.8/Oracle_VirtualBox_Extension_Pack-7.1.8.vbox-extpack"
+                    )
+                    $destExtPack = Join-Path $AppsDir "Oracle_VirtualBox_Extension_Pack.vbox-extpack"
+                    $dlExt = Download-FileWithFastMirrors -Urls $extPackMirrors -DestinationPath $destExtPack -ActivityTitle "Mengunduh Extension Pack"
+                    if ($dlExt -and (Test-Path $destExtPack)) {
+                        $extPackFile = Get-Item $destExtPack
+                    }
+                }
+
+                if ($extPackFile -and (Test-Path $extPackFile.FullName) -and ($extPackFile.Length -gt 1048576)) {
+                    Write-Host "   [i] Memasang Extension Pack secara otomatis: $($extPackFile.Name)..." -ForegroundColor Yellow
+                    try {
+                        # Pasang dengan persetujuan lisensi otomatis (accept license)
+                        $p = Start-Process -FilePath $vboxManage -ArgumentList "extpack install --replace `"$($extPackFile.FullName)`" --accept-license=33d7284dc4a0ece381196da3cfe3f45f8b94642b`"" -Wait -PassThru -WindowStyle Hidden
+                        if ($p.ExitCode -eq 0) {
+                            Write-Host "   [OK] Oracle VM VirtualBox Extension Pack berhasil dipasang!" -ForegroundColor Green
+                        } else {
+                            # Fallback tanpa hash lisensi jika versi berbeda
+                            Write-Host "   [i] Mendaftarkan berkas extension pack ke sistem..." -ForegroundColor Cyan
+                            Start-Process -FilePath $extPackFile.FullName -ErrorAction SilentlyContinue
+                        }
+                    } catch {
+                        Start-Process -FilePath $extPackFile.FullName -ErrorAction SilentlyContinue
+                    }
+                } else {
+                    Write-Host "   [!] Berkas Extension Pack belum siap diunduh (opsional untuk fitur USB 3.0/RDP)." -ForegroundColor Gray
+                }
+            }
+        }
+    }
+}
+
 # 11.1 Fungsi Setup Microsoft Visual Studio 2022 Community (Desktop C++ Auto-Layout & Offline Cache)
 function Setup-VisualStudio {
     Write-Host "`n========================================================" -ForegroundColor Cyan
@@ -2029,11 +2132,13 @@ function Test-LabSoftwareStatus {
         try {
             $job = Start-Job -ScriptBlock $chk.Cmd
             if (Wait-Job $job -Timeout 4) {
-                $res = Receive-Job $job -ErrorAction SilentlyContinue | Out-String
+                $rawOutput = Receive-Job $job -ErrorAction SilentlyContinue
                 Remove-Job $job -Force -ErrorAction SilentlyContinue
-                if (!([string]::IsNullOrWhiteSpace($res))) {
-                    $cleanLines = ($res.Trim() -split "`r?`n") | Where-Object { $_ -notmatch '(?i)warning:' -and -not [string]::IsNullOrWhiteSpace($_) }
-                    $firstLine = if ($cleanLines) { $cleanLines[0] } else { ($res.Trim() -split "`r?`n")[0] }
+                $res = ($rawOutput | Out-String).Trim()
+                if (-not [string]::IsNullOrWhiteSpace($res)) {
+                    $lines = @($res -split "`r?`n")
+                    $cleanLines = @($lines | Where-Object { $_ -notmatch '(?i)warning:' -and -not [string]::IsNullOrWhiteSpace($_) })
+                    $firstLine = if ($cleanLines.Count -gt 0) { [string]$cleanLines[0] } else { [string]$lines[0] }
                     Write-Host $firstLine -ForegroundColor Green
                 } else {
                     Write-Host "Belum Terdeteksi di PATH" -ForegroundColor Yellow
@@ -2057,6 +2162,7 @@ function Test-LabSoftwareStatus {
         @{ Name = "Proteus Design Suite";Path = @("C:\Program Files*\Labcenter Electronics\Proteus *\BIN\PDS.EXE", "C:\Program Files (x86)\Labcenter Electronics\Proteus *\BIN\PDS.EXE"); Reg = "*Proteus*" },
         @{ Name = "Android Studio";      Path = @("C:\Program Files\Android\Android Studio\bin\studio64.exe", "C:\Program Files (x86)\Android\Android Studio\bin\studio64.exe", "C:\Users\*\AppData\Local\Programs\Android\Android Studio\bin\studio64.exe"); Reg = "*Android Studio*" },
         @{ Name = "Oracle VirtualBox";   Path = @("C:\Program Files\Oracle\VirtualBox\VirtualBox.exe", "C:\Program Files (x86)\Oracle\VirtualBox\VirtualBox.exe"); Reg = "*VirtualBox*" },
+        @{ Name = "VBox Extension Pack"; Path = @("C:\Program Files\Oracle\VirtualBox\ExtensionPacks\Oracle_VM_VirtualBox_Extension_Pack\ExtPack.xml"); Reg = "*VirtualBox Extension Pack*" },
         @{ Name = "Apache NetBeans";     Path = @("C:\Program Files\*NetBeans*\netbeans\bin\netbeans*.exe", "C:\Program Files\*NetBeans*\bin\netbeans*.exe", "C:\Program Files\Apache NetBeans*\bin\netbeans*.exe", "C:\Program Files (x86)\*NetBeans*\netbeans\bin\netbeans*.exe", "C:\Program Files (x86)\*NetBeans*\bin\netbeans*.exe"); Reg = "*NetBeans*" },
         @{ Name = "QGIS Desktop";        Path = @("C:\Program Files\QGIS *\bin\qgis-bin.exe", "C:\Program Files\QGIS *\bin\qgis.exe"); Reg = "*QGIS*" },
         @{ Name = "Arduino IDE";         Path = @("C:\Program Files\Arduino IDE\Arduino IDE.exe", "C:\Program Files\Arduino\arduino.exe", "C:\Users\*\AppData\Local\Programs\Arduino IDE\Arduino IDE.exe", "C:\Users\*\AppData\Local\Arduino*\arduino*.exe", "C:\Program Files (x86)\Arduino\arduino.exe"); Reg = "*Arduino*" },
@@ -2154,19 +2260,8 @@ function Run-FullInstallation {
     # 6. Node.js LTS & NPM (Otomatis Silent + Global PATH)
     Setup-NodeJS
 
-    # 7. Oracle VM VirtualBox (Otomatis Silent dengan Multi-CDN Mirror Resmi Cepat)
-    $vboxMirrors = @(
-        "https://download.virtualbox.org/virtualbox/7.2.20/VirtualBox-7.2.20-175154-Win.exe",
-        "https://download.virtualbox.org/virtualbox/7.1.8/VirtualBox-7.1.8-168469-Win.exe",
-        "https://download.virtualbox.org/virtualbox/7.1.6/VirtualBox-7.1.6-167084-Win.exe",
-        "https://download.virtualbox.org/virtualbox/7.0.20/VirtualBox-7.0.20-163906-Win.exe"
-    )
-    Install-AppSmart -Name "Oracle VM VirtualBox" `
-                     -FilePattern @("*VirtualBox*.exe", "*VirtualBox*.msi") `
-                     -DownloadUrls $vboxMirrors `
-                     -SilentArgs "--silent" `
-                     -WingetId "Oracle.VirtualBox" `
-                     -CheckPath @("C:\Program Files\Oracle\VirtualBox\VirtualBox.exe", "C:\Program Files (x86)\Oracle\VirtualBox\VirtualBox.exe")
+    # 7. Oracle VM VirtualBox & Extension Pack (Otomatis Silent dengan Multi-Mirror Google Drive & CDN)
+    Setup-VirtualBox
 
     # 8. Apache NetBeans (Otomatis Silent dengan Java JDK 17+ Terdeteksi & Multi-Mirror Cepat)
     $nbJdkPath = $null
@@ -2388,10 +2483,26 @@ function Start-DownloadOnlyMaster {
             FilePattern = @("*VirtualBox*.exe", "*VirtualBox*.msi")
             DestFile = "VirtualBox-7.2.20-Win.exe"
             Urls = @(
+                "https://drive.google.com/file/d/18VMaCMVlP5-1yoUU0e90Bjy3pqUzqV8i/view?usp=sharing",
+                "https://drive.google.com/file/d/1O0GSKjOzYf7b5cC5hlIsa10ouzMtrS7D/view?usp=sharing",
+                "https://drive.google.com/file/d/1yR9Xc2bRcEwQBz7o3IrMZ0Ustx5jd5fI/view?usp=sharing",
+                "https://drive.google.com/file/d/1FqHbWQdaRxOoO0woLB-UZjlXFeWJ5VnA/view?usp=sharing",
                 "https://download.virtualbox.org/virtualbox/7.2.20/VirtualBox-7.2.20-175154-Win.exe",
                 "https://download.virtualbox.org/virtualbox/7.1.8/VirtualBox-7.1.8-168469-Win.exe",
-                "https://download.virtualbox.org/virtualbox/7.1.6/VirtualBox-7.1.6-167084-Win.exe",
-                "https://download.virtualbox.org/virtualbox/7.0.20/VirtualBox-7.0.20-163906-Win.exe"
+                "https://download.virtualbox.org/virtualbox/7.1.6/VirtualBox-7.1.6-167084-Win.exe"
+            )
+        },
+        @{
+            Name = "Oracle VM VirtualBox Extension Pack"
+            FilePattern = @("*.vbox-extpack", "*Extension*Pack*.vbox-extpack")
+            DestFile = "Oracle_VirtualBox_Extension_Pack.vbox-extpack"
+            Urls = @(
+                "https://drive.google.com/file/d/1g0Ut2twJy71GQ4b6-4Nj6_3e99WCxWFY/view?usp=sharing",
+                "https://drive.google.com/file/d/1T3LOPKLTCx6JP0IZYBrJKaVaiqawXv6c/view?usp=sharing",
+                "https://drive.google.com/file/d/1bL621GdJ7tN1e3_IAClmwyIdyd5HcVxb/view?usp=sharing",
+                "https://drive.google.com/file/d/1dlEPu54jB1ai3McvksX15axwGONs64g-/view?usp=sharing",
+                "https://download.virtualbox.org/virtualbox/7.2.20/Oracle_VirtualBox_Extension_Pack-7.2.20.vbox-extpack",
+                "https://download.virtualbox.org/virtualbox/7.1.8/Oracle_VirtualBox_Extension_Pack-7.1.8.vbox-extpack"
             )
         },
         @{
