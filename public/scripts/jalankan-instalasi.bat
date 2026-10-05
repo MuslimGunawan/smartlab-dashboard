@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions
 cd /d "%~dp0"
-title Installer Otomatis 19 Software Lab TI - UNIMAL [v3.3.7]
+title Installer Otomatis 20 Software Lab TI - UNIMAL [v3.3.8]
 
 :: 1. Tentukan target file powershell utama
 set "TARGET_PS=%~dp0Apps\install-lab-software.ps1"
@@ -15,7 +15,10 @@ if not exist "%TARGET_PS%" (
     powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12; $wc = New-Object System.Net.WebClient; $urls = @('https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/install-lab-software.ps1', 'https://smartlab.is-best.net/scripts/install-lab-software.ps1'); foreach ($u in $urls) { try { $wc.DownloadFile($u, '%~dp0Apps\install-lab-software.ps1'); break } catch {} }; $wc.Dispose()"
 )
 
-:: 3. Jalankan langsung di jendela PowerShell dengan self-elevation cerdas:
+:: 3. Buka izin PowerShell ExecutionPolicy di latar belakang
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force -ErrorAction SilentlyContinue" >nul 2>&1
+
+:: 4. Jalankan langsung di jendela PowerShell dengan self-elevation cerdas:
 :: - Jika sudah hak Administrator, jalankan langsung tanpa prompt tambahan.
 :: - Jika hak User Biasa, coba minta elevasi RunAs.
 :: - Jika prompt RunAs ditolak/gagal atau sistem tanpa RunAs, otomatis LANJUTKAN di sesi user biasa (jendela TIDAK AKAN langsung tertutup!).

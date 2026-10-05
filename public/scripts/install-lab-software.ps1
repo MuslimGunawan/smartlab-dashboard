@@ -2,7 +2,7 @@
 # SCRIPT OTOMASI INSTALASI SOFTWARE LABORATORIUM TEKNIK INFORMATIKA
 # UNIVERSITAS MALIKUSSALEH (UNIMAL)
 # ==============================================================================
-# Standarisasi 19 Software Praktikum Resmi Lab TI Unimal:
+# Standarisasi 20 Software Praktikum Resmi Lab TI Unimal:
 #
 # A. APLIKASI BERLISENSI (4):
 #   1. Delphi (Embarcadero Delphi / RAD Studio) -> Mode Interaktif (Pihak Ketiga)
@@ -10,27 +10,28 @@
 #   3. Microsoft Visual Studio 2022 Community
 #   4. Proteus Design Suite (Labcenter Electronics) -> Mode Interaktif (Pihak Ketiga)
 #
-# B. APLIKASI EKSTRAKSI, DEV STACK & BEBAS LISENSI (15):
+# B. APLIKASI EKSTRAKSI, DEV STACK & BEBAS LISENSI (16):
 #   5. 7-Zip (High-Speed Archive Extractor)
 #   6. WinRAR (Lab Archive Support .rar/.zip)
-#   7. Visual Studio Code
-#   8. Android Studio
-#   9. Python 3.12 (with PIP & System PATH)
-#  10. Java JDK 17 LTS (with JAVA_HOME & System PATH)
-#  11. Node.js LTS (with NPM & Global PATH)
-#  12. Flutter SDK (All Doctor Checks Passed & Auto-Configured)
-#  13. Composer & Laravel Setup
-#  14. Oracle VM VirtualBox
-#  15. Apache NetBeans IDE
-#  16. QGIS Desktop
-#  17. Arduino IDE (Arduino Uno & IoT)
-#  18. Laragon (WAMP Stack + Safe Modul)
-#  19. XAMPP Server (Port Anti-Bentrok)
+#   7. Git for Windows (Wajib untuk Dart SDK, Flutter, Composer, & VS Code)
+#   8. Visual Studio Code
+#   9. Android Studio
+#  10. Python 3.12 (with PIP & System PATH)
+#  11. Java JDK 17 LTS (with JAVA_HOME & System PATH)
+#  12. Node.js LTS (with NPM & Global PATH)
+#  13. Flutter SDK (All Doctor Checks Passed & Auto-Configured)
+#  14. Composer & Laravel Setup
+#  15. Oracle VM VirtualBox
+#  16. Apache NetBeans IDE
+#  17. QGIS Desktop
+#  18. Arduino IDE (Arduino Uno & IoT)
+#  19. Laragon (WAMP Stack + Safe Modul)
+#  20. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.7"
+$SCRIPT_CURRENT_VERSION = "3.3.8"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$Host.UI.RawUI.WindowTitle = "Installer Otomatis 19 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
+$Host.UI.RawUI.WindowTitle = "Installer Otomatis 20 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
 # 1. Pastikan script berjalan sebagai Administrator
 function Test-Administrator {
@@ -85,7 +86,14 @@ function Invoke-LabKeepAlive {
     } catch {}
 }
 
-# 1.2 Persiapan Sumber Winget (Cegah error sertifikat 0x8a15005e pada sumber msstore)
+# 1.2 Konfigurasi Kebijakan Eksekusi PowerShell (Bebas Hambatan untuk npm, npx, dart, & laravel)
+try {
+    Set-ExecutionPolicy RemoteSigned -Scope Process -Force -ErrorAction SilentlyContinue
+    Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+    Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force -ErrorAction SilentlyContinue
+} catch {}
+
+# 1.3 Persiapan Sumber Winget (Cegah error sertifikat 0x8a15005e pada sumber msstore)
 try {
     $sources = winget source list 2>$null | Out-String
     if ($sources -match "msstore") {
@@ -432,7 +440,11 @@ function Download-FileWithFastMirrors {
             $request.Timeout = 20000
             $request.ReadWriteTimeout = 60000
             $request.CookieContainer = $cookieJar
-            $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            if ($actualUrl -match 'sourceforge\.net') {
+                $request.UserAgent = "curl/8.4.0"
+            } else {
+                $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
             $response = $request.GetResponse()
 
             # Google Drive Fallback: Tangani halaman konfirmasi "Google Drive can't scan this file for viruses"
@@ -936,6 +948,54 @@ function Setup-WinRAR {
     }
 }
 
+# 5.3. Fungsi Setup Git for Windows (Wajib untuk Dart SDK, Flutter, Composer, & VS Code)
+function Setup-Git {
+    $gitMirrors = @(
+        "https://github.com/git-for-windows/git/releases/download/v2.48.1.windows.1/Git-2.48.1-64-bit.exe",
+        "https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/Git-2.47.1-64-bit.exe",
+        "https://github.com/git-for-windows/git/releases/download/v2.44.0.windows.1/Git-2.44.0-64-bit.exe"
+    )
+    $gitCheckPaths = @(
+        "C:\Program Files\Git\cmd\git.exe",
+        "C:\Program Files\Git\bin\git.exe",
+        "C:\Program Files (x86)\Git\cmd\git.exe",
+        "C:\laragon\bin\git\cmd\git.exe"
+    )
+
+    Install-AppSmart -Name "Git for Windows" `
+                     -FilePattern @("*Git*64-bit*.exe", "*Git*.exe") `
+                     -DownloadUrls $gitMirrors `
+                     -SilentArgs "/VERYSILENT /NORESTART /NOCANCEL /SP- /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS" `
+                     -WingetId "Git.Git" `
+                     -CheckPath $gitCheckPaths
+
+    $gitFound = $null
+    foreach ($gp in $gitCheckPaths) {
+        if (Test-Path $gp) { $gitFound = $gp; break }
+    }
+
+    if ($gitFound) {
+        $gitDir = Split-Path -Parent $gitFound
+        $gitRoot = Split-Path -Parent $gitDir
+        $gitCmd = Join-Path $gitRoot "cmd"
+        $gitBin = Join-Path $gitRoot "bin"
+        $gitUsrBin = Join-Path $gitRoot "usr\bin"
+
+        if (Test-Path $gitCmd) { Add-ToSystemPath -DirToAdd $gitCmd }
+        if (Test-Path $gitBin) { Add-ToSystemPath -DirToAdd $gitBin }
+        if (Test-Path $gitUsrBin) { Add-ToSystemPath -DirToAdd $gitUsrBin }
+
+        # Update environment PATH sesi sekarang secara instan agar dart/flutter/composer langsung mengenal git
+        $pathsToPrepend = @($gitCmd, $gitBin, $gitUsrBin) | Where-Object { Test-Path $_ }
+        foreach ($pt in $pathsToPrepend) {
+            if ($env:Path -notlike "*$pt*") {
+                $env:Path = "$pt;" + $env:Path
+            }
+        }
+        Write-Host "   [OK] Git for Windows berhasil didaftarkan ke System PATH ($gitFound)!" -ForegroundColor Green
+    }
+}
+
 # 6. Fungsi Khusus Setup Java JDK & JAVA_HOME
 function Setup-JavaJDK {
     Install-AppSmart -Name "Java JDK 17 (OpenJDK Temurin)" `
@@ -1233,8 +1293,23 @@ function Setup-LaragonStack {
             foreach ($ext in $extList) {
                 $hasExtDll = (Test-Path (Join-Path $extDir "php_$ext.dll")) -or (Test-Path (Join-Path $extDir "$ext.dll"))
                 if ($hasExtDll -or -not (Test-Path $extDir)) {
-                    $iniText = $iniText -replace "(?m)^;\s*extension\s*=\s*$ext\b", "extension=$ext"
-                    if ($iniText -notmatch "(?m)^extension\s*=\s*$ext\b") { $iniText += "`r`nextension=$ext`r`n" }
+                    # Bersihkan duplikasi lama: komentar semua baris extension yang sama dulu
+                    $iniText = $iniText -replace "(?m)^\s*extension\s*=\s*(?:php_)?$ext(?:\.dll)?\b", ";extension=$ext"
+                    # Aktifkan tepat satu baris pertama
+                    $matchedFirst = $false
+                    $iniLines = @($iniText -split "`r?`n")
+                    for ($li = 0; $li -lt $iniLines.Count; $li++) {
+                        if ($iniLines[$li] -match "^\s*;\s*extension\s*=\s*$ext\b") {
+                            $iniLines[$li] = "extension=$ext"
+                            $matchedFirst = $true
+                            break
+                        }
+                    }
+                    if ($matchedFirst) {
+                        $iniText = $iniLines -join "`r`n"
+                    } else {
+                        $iniText += "`r`nextension=$ext`r`n"
+                    }
                 }
             }
 
@@ -1345,9 +1420,15 @@ function Setup-XamppStack {
     Write-Host "Memproses: XAMPP Server + Konfigurasi Port Anti-Bentrok" -ForegroundColor Cyan
     Write-Host "========================================================" -ForegroundColor Cyan
 
+    $xamppMirrors = @(
+        "https://downloads.sourceforge.net/project/xampp/XAMPP%20Windows/8.2.12/xampp-windows-x64-8.2.12-0-VS16-installer.exe",
+        "https://sourceforge.net/projects/xampp/files/XAMPP%20Windows/8.2.12/xampp-windows-x64-8.2.12-0-VS16-installer.exe/download"
+    )
+
     # 1. Jalankan Installer XAMPP (Unattended Silent Mode)
     Install-AppSmart -Name "XAMPP" `
                      -FilePattern "*xampp*.exe" `
+                     -DownloadUrls $xamppMirrors `
                      -SilentArgs "--mode unattended" `
                      -WingetId "ApacheFriends.Xampp.8.2" `
                      -CheckPath @("C:\xampp\xampp-control.exe", "D:\xampp\xampp-control.exe")
@@ -1461,6 +1542,12 @@ function Setup-NodeJS {
             New-Item -ItemType Directory -Path $npmGlobalPath -Force | Out-Null
         }
         Add-ToSystemPath -DirToAdd $npmGlobalPath
+
+        # Aktifkan izin eksekusi skrip PowerShell agar npm.ps1 dan npx.ps1 tidak diblokir
+        try {
+            Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+            Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force -ErrorAction SilentlyContinue
+        } catch {}
     }
 }
 
@@ -1575,15 +1662,27 @@ function Setup-ComposerAndLaravel {
                 $newIni = $newIni -replace '(?m)^\s*extension\s*=\s*zip\b', ';extension=zip'
             }
 
-            $newIni = $newIni -replace '(?m)^;\s*extension\s*=\s*fileinfo\b', 'extension=fileinfo'
-            $newIni = $newIni -replace '(?m)^;\s*extension\s*=\s*curl\b', 'extension=curl'
-            $newIni = $newIni -replace '(?m)^;\s*extension\s*=\s*openssl\b', 'extension=openssl'
-            $newIni = $newIni -replace '(?m)^;\s*extension\s*=\s*pdo_mysql\b', 'extension=pdo_mysql'
-            $newIni = $newIni -replace '(?m)^;\s*extension\s*=\s*mbstring\b', 'extension=mbstring'
-
-            if ($newIni -notmatch '(?m)^extension\s*=\s*fileinfo\b') { $newIni += "`r`nextension=fileinfo`r`n" }
-            if ($newIni -notmatch '(?m)^extension\s*=\s*curl\b') { $newIni += "`r`nextension=curl`r`n" }
-            if ($newIni -notmatch '(?m)^extension\s*=\s*openssl\b') { $newIni += "`r`nextension=openssl`r`n" }
+            $extList = @("curl", "fileinfo", "openssl", "pdo_mysql", "mysqli", "mbstring", "gd", "intl", "exif", "bcmath", "sodium")
+            foreach ($ext in $extList) {
+                $hasExtDll = (Test-Path (Join-Path $extDir "php_$ext.dll")) -or (Test-Path (Join-Path $extDir "$ext.dll"))
+                if ($hasExtDll -or -not (Test-Path $extDir)) {
+                    $newIni = $newIni -replace "(?m)^\s*extension\s*=\s*(?:php_)?$ext(?:\.dll)?\b", ";extension=$ext"
+                    $matchedFirst = $false
+                    $iniLines = @($newIni -split "`r?`n")
+                    for ($li = 0; $li -lt $iniLines.Count; $li++) {
+                        if ($iniLines[$li] -match "^\s*;\s*extension\s*=\s*$ext\b") {
+                            $iniLines[$li] = "extension=$ext"
+                            $matchedFirst = $true
+                            break
+                        }
+                    }
+                    if ($matchedFirst) {
+                        $newIni = $iniLines -join "`r`n"
+                    } else {
+                        $newIni += "`r`nextension=$ext`r`n"
+                    }
+                }
+            }
 
             if (Test-Path $extDir) {
                 $escapedExt = $extDir.Replace('\', '/')
@@ -2063,15 +2162,41 @@ function Setup-FlutterSDK {
     & flutter config --enable-windows-desktop --enable-web --enable-android --no-analytics | Out-Null
     Write-Host "   [OK] Platform Windows Desktop, Web & Android diaktifkan!" -ForegroundColor Green
 
-    # F. Auto-Accept Android Licenses (Non-Interaktif)
+    # F. Auto-Accept Android Licenses (Non-Interaktif & Hashes Generator)
     Write-Host "   [i] Menyetujui semua lisensi Android SDK secara otomatis (Accept Licenses)..." -ForegroundColor Yellow
+    if ($detectedSdk) {
+        try {
+            $licensesDir = Join-Path $detectedSdk "licenses"
+            if (-not (Test-Path $licensesDir)) { New-Item -ItemType Directory -Path $licensesDir -Force | Out-Null }
+            $sdkLicensePath = Join-Path $licensesDir "android-sdk-license"
+            $sdkLicenseContent = "24333f8a63cbd8224f723649d2a47016e7f1539a`r`n89338d0d9b183fb97af112d34f2d18586594f3b0`r`nd56f5187479451eabf01fb78af6dfcb131a6481e`r`n"
+            [System.IO.File]::WriteAllText($sdkLicensePath, $sdkLicenseContent)
+
+            $previewLicensePath = Join-Path $licensesDir "android-sdk-preview-license"
+            $previewLicenseContent = "84831b9409646a53fe44263426949611a3454ed4`r`n"
+            [System.IO.File]::WriteAllText($previewLicensePath, $previewLicenseContent)
+        } catch {}
+    }
     try {
         $yesInputs = ("y`n" * 20)
         $yesInputs | & flutter doctor --android-licenses 2>&1 | Out-Null
         Write-Host "   [OK] Semua lisensi Android SDK disetujui (All Android licenses accepted)!" -ForegroundColor Green
     } catch {}
 
-    # G. Jalankan Flutter Doctor ringkas
+    # G. Integrasi VS Code & Ekstensi Flutter (Hilangkan status unknown di flutter doctor)
+    $codeCmd = Get-Command code -ErrorAction SilentlyContinue
+    if (-not $codeCmd) {
+        $userCode = "$env:LOCALAPPDATA\Programs\Microsoft VS Code\bin\code.cmd"
+        if (Test-Path $userCode) { $codeCmd = $userCode }
+    }
+    if ($codeCmd) {
+        try {
+            Write-Host "   [i] Mendaftarkan ekstensi Flutter pada Visual Studio Code..." -ForegroundColor Cyan
+            & $codeCmd --install-extension Dart-Code.flutter --force 2>&1 | Out-Null
+        } catch {}
+    }
+
+    # H. Jalankan Flutter Doctor ringkas
     Write-Host "`n   --- Hasil Flutter Doctor Terkini ---" -ForegroundColor Cyan
     try {
         & flutter doctor
@@ -2106,6 +2231,7 @@ function Test-LabSoftwareStatus {
     }
 
     $cliChecks = @(
+        @{ Name = "Git"; Cmd = { git --version 2>&1 } },
         @{ Name = "Python 3"; Cmd = { python --version 2>&1 } },
         @{ Name = "Pip"; Cmd = { pip --version 2>&1 } },
         @{ Name = "Java (JDK)"; Cmd = { java -version 2>&1 } },
@@ -2156,6 +2282,7 @@ function Test-LabSoftwareStatus {
     $guiApps = @(
         @{ Name = "7-Zip";               Path = @("C:\Program Files\7-Zip\7z.exe", "C:\Program Files (x86)\7-Zip\7z.exe"); Reg = "*7-Zip*" },
         @{ Name = "WinRAR";              Path = @("C:\Program Files\WinRAR\WinRAR.exe", "C:\Program Files (x86)\WinRAR\WinRAR.exe"); Reg = "*WinRAR*" },
+        @{ Name = "Git for Windows";     Path = @("C:\Program Files\Git\cmd\git.exe", "C:\Program Files\Git\bin\git.exe"); Reg = "*Git*" },
         @{ Name = "Delphi (RAD Studio)"; Path = @("C:\Program Files*\Embarcadero\Studio\*\bin\bds.exe", "C:\Program Files (x86)\Embarcadero\Studio\*\bin\bds.exe"); Reg = "*Delphi*" },
         @{ Name = "Cisco Packet Tracer"; Path = @("C:\Program Files\Cisco Packet Tracer *\bin\PacketTracer.exe", "C:\Program Files (x86)\Cisco Packet Tracer *\bin\PacketTracer.exe"); Reg = "*Packet Tracer*" },
         @{ Name = "Visual Studio 2022";  Path = @("C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe", "C:\Program Files (x86)\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe"); Reg = "*Visual Studio*" },
@@ -2248,22 +2375,25 @@ function Run-FullInstallation {
     # 2. WinRAR (Lab Archive Support .rar/.zip)
     Setup-WinRAR
 
-    # 3. VS Code (Otomatis Silent)
+    # 3. Git for Windows (Wajib untuk Dart SDK, Flutter, Composer, & VS Code)
+    Setup-Git
+
+    # 4. Visual Studio Code (Otomatis Silent)
     Install-AppSmart -Name "Visual Studio Code" -FilePattern "*Code*.exe" -SilentArgs "/VERYSILENT /NORESTART /MERGETASKS=!runcode,addcontextmenufiles,addcontextmenufolders,associatewithfiles,addtopath" -WingetId "Microsoft.VisualStudioCode" -CheckPath "$env:LOCALAPPDATA\Programs\Microsoft VS Code\Code.exe"
 
-    # 4. Python 3.12 (Otomatis Silent + PATH)
+    # 5. Python 3.12 (Otomatis Silent + PATH)
     Setup-Python
 
-    # 5. Java JDK 17 (Otomatis Silent + JAVA_HOME)
+    # 6. Java JDK 17 (Otomatis Silent + JAVA_HOME)
     Setup-JavaJDK
 
-    # 6. Node.js LTS & NPM (Otomatis Silent + Global PATH)
+    # 7. Node.js LTS & NPM (Otomatis Silent + Global PATH)
     Setup-NodeJS
 
-    # 7. Oracle VM VirtualBox & Extension Pack (Otomatis Silent dengan Multi-Mirror Google Drive & CDN)
+    # 8. Oracle VM VirtualBox & Extension Pack (Otomatis Silent dengan Multi-Mirror Google Drive & CDN)
     Setup-VirtualBox
 
-    # 8. Apache NetBeans (Otomatis Silent dengan Java JDK 17+ Terdeteksi & Multi-Mirror Cepat)
+    # 9. Apache NetBeans (Otomatis Silent dengan Java JDK 17+ Terdeteksi & Multi-Mirror Cepat)
     $nbJdkPath = $null
     $nbJdkCandidates = @(
         $env:JAVA_HOME,
@@ -2321,7 +2451,7 @@ function Run-FullInstallation {
         }
     }
 
-    # 9. Android Studio (Otomatis Silent dengan Multi-CDN Google Resmi & Winget Fallback)
+    # 10. Android Studio (Otomatis Silent dengan Multi-CDN Google Resmi & Winget Fallback)
     $androidStudioMirrors = @(
         "https://redirector.gvt1.com/edgedl/android/studio/install/2024.2.1.12/android-studio-2024.2.1.12-windows.exe",
         "https://dl.google.com/dl/android/studio/install/2024.2.1.12/android-studio-2024.2.1.12-windows.exe",
@@ -2334,13 +2464,13 @@ function Run-FullInstallation {
                      -WingetId "Google.AndroidStudio" `
                      -CheckPath @("C:\Program Files\Android\Android Studio\bin\studio64.exe", "C:\Program Files\Android Studio\bin\studio64.exe", "C:\Program Files (x86)\Android\Android Studio\bin\studio64.exe")
 
-    # 10. QGIS Desktop (Otomatis Silent)
+    # 11. QGIS Desktop (Otomatis Silent)
     Install-AppSmart -Name "QGIS Desktop" -FilePattern "*QGIS*.msi" -SilentArgs "/qn" -WingetId "OSGeo.QGIS" -CheckPath "C:\Program Files\QGIS *\bin\qgis-bin.exe"
 
-    # 11. Microsoft Visual Studio 2022 Community (Desktop development with C++ Workload - Support 100% Offline Layout)
+    # 12. Microsoft Visual Studio 2022 Community (Desktop development with C++ Workload - Support 100% Offline Layout)
     Setup-VisualStudio
 
-    # 12. Arduino IDE (Arduino Uno, Nano, Mega, IoT)
+    # 13. Arduino IDE (Arduino Uno, Nano, Mega, IoT)
     $arduinoMirrors = @(
         "https://github.com/arduino/arduino-ide/releases/download/2.3.10/arduino-ide_2.3.10_Windows_64bit.msi",
         "https://downloads.arduino.cc/arduino-ide/arduino-ide_2.3.10_Windows_64bit.msi"
@@ -2352,19 +2482,19 @@ function Run-FullInstallation {
                      -WingetId "ArduinoSA.IDE.stable" `
                      -CheckPath @("C:\Program Files\Arduino IDE\Arduino IDE.exe", "C:\Program Files\Arduino\arduino.exe", "C:\Users\*\AppData\Local\Programs\Arduino IDE\Arduino IDE.exe", "C:\Users\*\AppData\Local\Arduino*\arduino*.exe", "C:\Program Files (x86)\Arduino\arduino.exe")
 
-    # 13. Flutter SDK (All Doctor Checks Passed & Auto-Configured)
+    # 14. Flutter SDK (All Doctor Checks Passed & Auto-Configured)
     Setup-FlutterSDK
 
-    # 14. Laragon (Installer Resmi 6.0.0 + Auto-Overlay Stack Custom)
+    # 15. Laragon (Installer Resmi 6.0.0 + Auto-Overlay Stack Custom)
     Setup-LaragonStack
 
-    # 15. Composer & Laravel Setup
+    # 16. Composer & Laravel Setup
     Setup-ComposerAndLaravel
 
-    # 16. XAMPP (Otomatis Silent + Konfigurasi Port Anti-Bentrok)
+    # 17. XAMPP (Otomatis Silent + Konfigurasi Port Anti-Bentrok)
     Setup-XamppStack
 
-    # 17. Cisco Packet Tracer (Multi-Mirror Google Drive Resmi Lab TI)
+    # 18. Cisco Packet Tracer (Multi-Mirror Google Drive Resmi Lab TI)
     $ciscoMirrors = @(
         "https://drive.google.com/file/d/1N_YQNs2xFrdFGRPs4kqgF6LGOYDp37ZK/view?usp=sharing",
         "https://drive.google.com/file/d/1O4flOVt7G-xZmfJSlxP3aLjTj1JM_LYP/view?usp=sharing",
@@ -2377,10 +2507,10 @@ function Run-FullInstallation {
                      -SilentArgs "/VERYSILENT /NORESTART" `
                      -CheckPath @("C:\Program Files\Cisco Packet Tracer *\bin\PacketTracer.exe", "C:\Program Files (x86)\Cisco Packet Tracer *\bin\PacketTracer.exe")
 
-    # 18. Embarcadero Delphi (Pihak Ketiga / Interaktif)
+    # 19. Embarcadero Delphi (Pihak Ketiga / Interaktif)
     Install-AppSmart -Name "Embarcadero Delphi" -FilePattern "*delphi*.exe" -IsInteractive -CheckPath @("C:\Program Files*\Embarcadero\Studio\*\bin\bds.exe", "C:\Program Files (x86)\Embarcadero\Studio\*\bin\bds.exe")
 
-    # 19. Proteus Design Suite (Pihak Ketiga / Interaktif)
+    # 20. Proteus Design Suite (Pihak Ketiga / Interaktif)
     Install-AppSmart -Name "Proteus Design Suite" -FilePattern "*proteus*.exe" -IsInteractive -CheckPath @("C:\Program Files*\Labcenter Electronics\Proteus *\BIN\PDS.EXE", "C:\Program Files (x86)\Labcenter Electronics\Proteus *\BIN\PDS.EXE")
 
     # ==============================================================================
@@ -2453,6 +2583,16 @@ function Start-DownloadOnlyMaster {
             FilePattern = @("*winrar*x64*.exe", "*winrar*.exe", "*wrar*.exe")
             DestFile = "winrar-x64-701.exe"
             Urls = @("https://www.rarlab.com/rar/winrar-x64-701.exe", "https://www.rarlab.com/rar/winrar-x64-700.exe")
+        },
+        @{
+            Name = "Git for Windows"
+            FilePattern = @("*Git*64-bit*.exe", "*Git*.exe")
+            DestFile = "Git-2.48.1-64-bit.exe"
+            Urls = @(
+                "https://github.com/git-for-windows/git/releases/download/v2.48.1.windows.1/Git-2.48.1-64-bit.exe",
+                "https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/Git-2.47.1-64-bit.exe",
+                "https://github.com/git-for-windows/git/releases/download/v2.44.0.windows.1/Git-2.44.0-64-bit.exe"
+            )
         },
         @{
             Name = "Visual Studio Code"
@@ -2562,7 +2702,10 @@ function Start-DownloadOnlyMaster {
             Name = "XAMPP Server"
             FilePattern = @("*xampp*.exe")
             DestFile = "xampp-windows-x64-8.2.12-installer.exe"
-            Urls = @("https://sourceforge.net/projects/xampp/files/XAMPP%20Windows/8.2.12/xampp-windows-x64-8.2.12-0-VS16-installer.exe/download")
+            Urls = @(
+                "https://downloads.sourceforge.net/project/xampp/XAMPP%20Windows/8.2.12/xampp-windows-x64-8.2.12-0-VS16-installer.exe",
+                "https://sourceforge.net/projects/xampp/files/XAMPP%20Windows/8.2.12/xampp-windows-x64-8.2.12-0-VS16-installer.exe/download"
+            )
         },
         @{
             Name = "Cisco Packet Tracer (Google Drive Multi-Mirror)"
@@ -2581,7 +2724,7 @@ function Start-DownloadOnlyMaster {
     $downloadResults = @()
 
     foreach ($t in $downloadTargets) {
-        Write-Host "`n[{0}/{1}] Memeriksa Master: $($t.Name)" -f $num, ($downloadTargets.Count + 2) -ForegroundColor Yellow
+        Write-Host ("`n[{0}/{1}] Memeriksa Master: $($t.Name)" -f $num, ($downloadTargets.Count + 2)) -ForegroundColor Yellow
         $existing = $null
         foreach ($pat in @($t.FilePattern)) {
             $candidates = Get-ChildItem -Path $AppsDir -Filter $pat -File -Recurse -ErrorAction SilentlyContinue
@@ -2641,7 +2784,7 @@ function Start-DownloadOnlyMaster {
     }
 
     # Penanganan Khusus Visual Studio 2022 Community Layout Cache
-    Write-Host "`n[{0}/{1}] Memeriksa Master: Visual Studio 2022 Community (Desktop C++ Offline Layout)" -f $num, ($downloadTargets.Count + 2) -ForegroundColor Yellow
+    Write-Host ("`n[{0}/{1}] Memeriksa Master: Visual Studio 2022 Community (Desktop C++ Offline Layout)" -f $num, ($downloadTargets.Count + 2)) -ForegroundColor Yellow
     $vsLayoutDir = Join-Path $AppsDir "vs_layout"
     $hasVsCache = (Test-Path $vsLayoutDir) -and (Test-Path (Join-Path $vsLayoutDir "packages"))
     if ($hasVsCache) {
@@ -2688,7 +2831,7 @@ function Start-DownloadOnlyMaster {
     $num++
 
     # Penanganan Khusus Software Pihak Ketiga (Delphi & Proteus)
-    Write-Host "`n[{0}/{1}] Memeriksa Master: Delphi & Proteus (Pihak Ketiga Berlisensi)" -f $num, ($downloadTargets.Count + 2) -ForegroundColor Yellow
+    Write-Host ("`n[{0}/{1}] Memeriksa Master: Delphi & Proteus (Pihak Ketiga Berlisensi)" -f $num, ($downloadTargets.Count + 2)) -ForegroundColor Yellow
     $delphiFile = Get-ChildItem -Path $AppsDir -Filter "*delphi*.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
     $proteusFile = Get-ChildItem -Path $AppsDir -Filter "*proteus*.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 
@@ -2779,7 +2922,7 @@ while ($running) {
     Clear-Host
     Show-SmartLabBanner
     Write-Host "Pilihan Tindakan:" -ForegroundColor Yellow
-    Write-Host " [1] Jalankan Otomasi Lengkap Lab (Instalasi & Standarisasi 19 Software)"
+    Write-Host " [1] Jalankan Otomasi Lengkap Lab (Instalasi & Standarisasi 20 Software)"
     Write-Host " [2] Unduh Seluruh Master Installer Offline ke Flashdisk (Download Saja / Cache Master)"
     Write-Host " [3] Verifikasi Status & Peta Port Software Lab"
     Write-Host " [4] Keluar`n"
