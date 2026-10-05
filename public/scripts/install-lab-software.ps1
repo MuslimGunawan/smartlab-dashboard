@@ -28,7 +28,7 @@
 #  19. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.5"
+$SCRIPT_CURRENT_VERSION = "3.3.6"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 19 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -519,13 +519,44 @@ function Download-FileWithFastMirrors {
             $responseStream.Close()
             $response.Close()
 
-            # Verifikasi jika file yang terunduh bukan error HTML kecil
+            # Verifikasi integritas: cegah berkas rusak/HTML error tersimpan sebagai installer biner
             $fInfo = Get-Item $currentDest -ErrorAction SilentlyContinue
-            if ($fInfo -and ($fInfo.Length -lt 200000) -and ($url -match 'drive\.google\.com')) {
-                $checkTxt = [System.IO.File]::ReadAllText($currentDest)
-                if (($checkTxt -match "<html") -or ($checkTxt -match "quota exceeded") -or ($checkTxt -match "kuota terlampaui")) {
+            if ($fInfo) {
+                # Cek 1: Jika server mengembalikan Content-Type text/html pada installer binary (.exe, .msi, .zip, .rar, .7z)
+                $destExt = [System.IO.Path]::GetExtension($currentDest).ToLower()
+                $isBinaryTarget = ($destExt -match '\.(exe|msi|zip|rar|7z|vbox-extpack)$')
+                if ($isBinaryTarget -and ($contentType -match 'text/html')) {
+                    $targetFile = $null
                     Remove-Item -Path $currentDest -Force -ErrorAction SilentlyContinue
-                    Write-Host "      [!] Google Drive mirror ini limit/kuota terlampaui. Berpindah ke mirror berikutnya..." -ForegroundColor DarkYellow
+                    Write-Host "      [!] Server mengembalikan dokumen HTML (bukan installer biner). Berpindah ke mirror berikutnya..." -ForegroundColor DarkYellow
+                    continue
+                }
+
+                # Cek 2: Google Drive limit/quota reached HTML detection
+                if (($fInfo.Length -lt 500000) -and ($url -match 'drive\.google\.com')) {
+                    $checkTxt = [System.IO.File]::ReadAllText($currentDest)
+                    if (($checkTxt -match "<html") -or ($checkTxt -match "quota exceeded") -or ($checkTxt -match "kuota terlampaui")) {
+                        Remove-Item -Path $currentDest -Force -ErrorAction SilentlyContinue
+                        Write-Host "      [!] Google Drive mirror ini limit/kuota terlampaui. Berpindah ke mirror berikutnya..." -ForegroundColor DarkYellow
+                        continue
+                    }
+                }
+
+                # Cek 3: Verifikasi ukuran minimum untuk installer aplikasi besar
+                if ($isBinaryTarget -and ($fInfo.Length -lt 1048576)) { # Kurang dari 1 MB
+                    $checkTxt = ""
+                    try { $checkTxt = [System.IO.File]::ReadAllText($currentDest) } catch {}
+                    if ($checkTxt -match "<html") {
+                        Remove-Item -Path $currentDest -Force -ErrorAction SilentlyContinue
+                        Write-Host "      [!] File terunduh adalah halaman web/error ($([math]::Round($fInfo.Length/1KB,1)) KB). Dihapus & berpindah ke mirror berikutnya..." -ForegroundColor DarkYellow
+                        continue
+                    }
+                }
+
+                # Cek 4: Verifikasi kelengkapan jika server menyediakan Content-Length valid
+                if ($totalBytes -gt 0 -and ($downloadedBytes -lt $totalBytes)) {
+                    Remove-Item -Path $currentDest -Force -ErrorAction SilentlyContinue
+                    Write-Host "      [!] Unduhan terputus sebelum selesai ($downloadedBytes / $totalBytes bytes). Berpindah ke mirror berikutnya..." -ForegroundColor DarkYellow
                     continue
                 }
             }
@@ -611,12 +642,29 @@ function Install-AppSmart {
         $offlineFile = $null
         $patterns = @($FilePattern)
         foreach ($pat in $patterns) {
-            $offlineFile = Get-ChildItem -Path $AppsDir -Filter $pat -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            $candidates = Get-ChildItem -Path $AppsDir -Filter $pat -File -Recurse -ErrorAction SilentlyContinue
+            foreach ($cand in $candidates) {
+                # Validasi kelayakan: file binary installer (.exe/.msi/.zip/.rar) harus bukan file HTML rusak/error
+                if ($cand.Length -lt 512000) { # kurang dari 500KB
+                    $isHtmlErr = $false
+                    try {
+                        $sample = [System.IO.File]::ReadAllText($cand.FullName)
+                        if ($sample -match "<html" -or $sample -match "quota exceeded") { $isHtmlErr = $true }
+                    } catch {}
+                    if ($isHtmlErr) {
+                        Remove-Item -Path $cand.FullName -Force -ErrorAction SilentlyContinue
+                        Write-Host "   [!] Menghapus berkas installer rusak/HTML error di Apps: $($cand.Name)" -ForegroundColor DarkYellow
+                        continue
+                    }
+                }
+                $offlineFile = $cand
+                break
+            }
             if ($offlineFile) { break }
         }
 
         if ($offlineFile) {
-            Write-Host "[OK] Ditemukan file installer offline: $($offlineFile.Name)" -ForegroundColor Green
+            Write-Host "[OK] Ditemukan file installer offline: $($offlineFile.Name) ($([math]::Round($offlineFile.Length / 1MB, 2)) MB)" -ForegroundColor Green
             
             $ext = $offlineFile.Extension.ToLower()
 
@@ -2106,11 +2154,11 @@ function Run-FullInstallation {
     # 6. Node.js LTS & NPM (Otomatis Silent + Global PATH)
     Setup-NodeJS
 
-    # 7. Oracle VM VirtualBox (Otomatis Silent dengan Multi-CDN Mirror Cepat)
+    # 7. Oracle VM VirtualBox (Otomatis Silent dengan Multi-CDN Mirror Resmi Cepat)
     $vboxMirrors = @(
+        "https://download.virtualbox.org/virtualbox/7.2.20/VirtualBox-7.2.20-175154-Win.exe",
+        "https://download.virtualbox.org/virtualbox/7.1.8/VirtualBox-7.1.8-168469-Win.exe",
         "https://download.virtualbox.org/virtualbox/7.1.6/VirtualBox-7.1.6-167084-Win.exe",
-        "https://mirror.ox.ac.uk/sites/download.virtualbox.org/virtualbox/7.1.6/VirtualBox-7.1.6-167084-Win.exe",
-        "http://mirrors.kernel.org/sourceware/cygwin/x86_64/release/", # dummy fallback safety
         "https://download.virtualbox.org/virtualbox/7.0.20/VirtualBox-7.0.20-163906-Win.exe"
     )
     Install-AppSmart -Name "Oracle VM VirtualBox" `
@@ -2338,8 +2386,13 @@ function Start-DownloadOnlyMaster {
         @{
             Name = "Oracle VM VirtualBox"
             FilePattern = @("*VirtualBox*.exe", "*VirtualBox*.msi")
-            DestFile = "VirtualBox-7.1.6-Win.exe"
-            Urls = @("https://download.virtualbox.org/virtualbox/7.1.6/VirtualBox-7.1.6-167084-Win.exe", "https://mirror.ox.ac.uk/sites/download.virtualbox.org/virtualbox/7.1.6/VirtualBox-7.1.6-167084-Win.exe")
+            DestFile = "VirtualBox-7.2.20-Win.exe"
+            Urls = @(
+                "https://download.virtualbox.org/virtualbox/7.2.20/VirtualBox-7.2.20-175154-Win.exe",
+                "https://download.virtualbox.org/virtualbox/7.1.8/VirtualBox-7.1.8-168469-Win.exe",
+                "https://download.virtualbox.org/virtualbox/7.1.6/VirtualBox-7.1.6-167084-Win.exe",
+                "https://download.virtualbox.org/virtualbox/7.0.20/VirtualBox-7.0.20-163906-Win.exe"
+            )
         },
         @{
             Name = "Apache NetBeans IDE 25"
@@ -2420,8 +2473,24 @@ function Start-DownloadOnlyMaster {
         Write-Host "`n[{0}/{1}] Memeriksa Master: $($t.Name)" -f $num, ($downloadTargets.Count + 2) -ForegroundColor Yellow
         $existing = $null
         foreach ($pat in @($t.FilePattern)) {
-            $f = Get-ChildItem -Path $AppsDir -Filter $pat -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($f) { $existing = $f; break }
+            $candidates = Get-ChildItem -Path $AppsDir -Filter $pat -File -Recurse -ErrorAction SilentlyContinue
+            foreach ($cand in $candidates) {
+                if ($cand.Length -lt 512000) {
+                    $isBad = $false
+                    try {
+                        $txt = [System.IO.File]::ReadAllText($cand.FullName)
+                        if ($txt -match "<html" -or $txt -match "quota exceeded") { $isBad = $true }
+                    } catch {}
+                    if ($isBad) {
+                        Remove-Item -Path $cand.FullName -Force -ErrorAction SilentlyContinue
+                        Write-Host "   [!] Menghapus berkas corrupt/HTML error lama di Apps: $($cand.Name)" -ForegroundColor DarkYellow
+                        continue
+                    }
+                }
+                $existing = $cand
+                break
+            }
+            if ($existing) { break }
         }
 
         if ($existing) {
