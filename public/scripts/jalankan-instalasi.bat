@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions
 cd /d "%~dp0"
-title Installer Otomatis 20 Software Lab TI - UNIMAL [v3.3.9]
+title Installer Otomatis 20 Software Lab TI - UNIMAL [v3.3.10]
 
 :: 1. Tentukan target file powershell utama
 set "TARGET_PS=%~dp0Apps\install-lab-software.ps1"
@@ -18,15 +18,7 @@ if not exist "%TARGET_PS%" (
 :: 3. Buka izin PowerShell ExecutionPolicy di latar belakang
 powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force -ErrorAction SilentlyContinue" >nul 2>&1
 
-:: 4. Jalankan langsung di jendela PowerShell dengan self-elevation cerdas:
-:: - Jika sudah hak Administrator, jalankan langsung tanpa prompt tambahan.
-:: - Jika hak User Biasa, coba minta elevasi RunAs.
-:: - Jika prompt RunAs ditolak/gagal atau sistem tanpa RunAs, otomatis LANJUTKAN di sesi user biasa (jendela TIDAK AKAN langsung tertutup!).
-net session >nul 2>&1
-if "%errorlevel%"=="0" (
-    start "" powershell.exe -NoProfile -ExecutionPolicy Bypass -NoExit -File "%TARGET_PS%"
-    exit /b 0
-) else (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process powershell.exe -ArgumentList '-NoProfile -ExecutionPolicy Bypass -NoExit -File \"\"%TARGET_PS%\"\"' -Verb RunAs -ErrorAction Stop } catch { Start-Process powershell.exe -ArgumentList '-NoProfile -ExecutionPolicy Bypass -NoExit -File \"\"%TARGET_PS%\"\"' }"
-    exit /b 0
-)
+:: 4. Jalankan langsung skrip PowerShell:
+:: Skrip PowerShell memiliki logika elevasi cerdas bawaan dan mendukung penuh mode Administrator maupun Pengguna Standar
+start "" powershell.exe -NoProfile -ExecutionPolicy Bypass -NoExit -File "%TARGET_PS%"
+exit /b 0

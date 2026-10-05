@@ -29,28 +29,36 @@
 #  20. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.9"
+$SCRIPT_CURRENT_VERSION = "3.3.10"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 20 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
-# 1. Pastikan script berjalan sebagai Administrator
+# 1. Pastikan status Administrator terdeteksi dengan cerdas (Dukungan Mode Admin & Mode Pengguna Standar)
 function Test-Administrator {
-    $user = [Security.Principal.WindowsIdentity]::GetCurrent()
-    (New-Object Security.Principal.WindowsPrincipal $user).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    try {
+        $user = [Security.Principal.WindowsIdentity]::GetCurrent()
+        return (New-Object Security.Principal.WindowsPrincipal $user).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch {
+        return $false
+    }
 }
 
-if (-not (Test-Administrator)) {
-    Write-Host "`n[!] Membutuhkan hak akses Administrator. Membuka jendela Administrator..." -ForegroundColor Yellow
+$script:IsAdmin = Test-Administrator
+
+if (-not $script:IsAdmin) {
+    # Coba minta elevasi Administrator secara halus tanpa menutup sesi jika ditolak pengguna/sistem lab
     try {
         $spPath = $PSCommandPath
         if (-not $spPath) { $spPath = $MyInvocation.MyCommand.Path }
-        Start-Process powershell.exe -ArgumentList ("-NoProfile -ExecutionPolicy Bypass -NoExit -File `"{0}`"" -f $spPath) -Verb RunAs -ErrorAction Stop
-        exit
+        if ($spPath -and (Test-Path $spPath)) {
+            $p = Start-Process powershell.exe -ArgumentList ("-NoProfile -ExecutionPolicy Bypass -NoExit -File `"{0}`"" -f $spPath) -Verb RunAs -PassThru -ErrorAction Stop
+            if ($p -and $p.Id) {
+                exit 0
+            }
+        }
     } catch {
-        $errElevate = $_.Exception.Message
-        Write-Host "[!] Elevasi Administrator otomatis tidak dapat dibuka ($errElevate)." -ForegroundColor Yellow
-        Write-Host "    Melanjutkan eksekusi pada sesi pengguna saat ini..." -ForegroundColor Cyan
-        Start-Sleep -Seconds 1
+        # Jika pengguna menolak prompt UAC atau komputer lab menerapkan akun standard non-admin:
+        # Script tetap berjalan normal pada sesi pengguna saat ini tanpa tertutup paksa!
     }
 }
 
@@ -164,6 +172,12 @@ function Show-SmartLabBanner {
     Write-Host " |            ||            " -NoNewline -ForegroundColor DarkGreen
     Write-Host "  [ STANDARISASI LABORATORIUM - VERSI $SCRIPT_CURRENT_VERSION ]               " -ForegroundColor Yellow
     Write-Host " |________[========]________|_________________________________________________|" -ForegroundColor DarkGreen
+    if ($script:IsAdmin) {
+        Write-Host "  Hak Akses Sesi : [ ADMINISTRATOR - HAK PENUH ]" -ForegroundColor Green
+    } else {
+        Write-Host "  Hak Akses Sesi : [ PENGGUNA STANDAR / NON-ADMIN ]" -ForegroundColor Yellow
+        Write-Host "  Catatan        : Menu [2] Unduh Master & [3] Cek Status dapat digunakan 100%." -ForegroundColor Gray
+    }
     Write-Host ""
 }
 
@@ -239,7 +253,11 @@ function Check-ScriptSelfUpdate {
                     Write-Host " [OK] Skrip berhasil diperbarui ke Versi $remoteVer secara sempurna!" -ForegroundColor Green
                     Write-Host " [*] Melakukan restart skrip otomatis dalam 2 detik..." -ForegroundColor Yellow
                     Start-Sleep -Seconds 2
-                    Start-Process powershell.exe -ArgumentList ("-NoProfile -ExecutionPolicy Bypass -File `"{0}`"" -f $scriptFile) -Verb RunAs
+                    if ($script:IsAdmin) {
+                        Start-Process powershell.exe -ArgumentList ("-NoProfile -ExecutionPolicy Bypass -NoExit -File `"{0}`"" -f $scriptFile) -Verb RunAs
+                    } else {
+                        Start-Process powershell.exe -ArgumentList ("-NoProfile -ExecutionPolicy Bypass -NoExit -File `"{0}`"" -f $scriptFile)
+                    }
                     exit
                 } else {
                     Write-Host " [!] Verifikasi versi gagal. Melanjutkan dengan versi saat ini..." -ForegroundColor Yellow
@@ -257,31 +275,62 @@ function Check-ScriptSelfUpdate {
 
 Check-ScriptSelfUpdate
 
-# 3. Fungsi Helper Tambah ke System PATH
+# 3. Fungsi Helper Tambah ke System PATH (Dual-Mode: Machine jika Admin, User jika Pengguna Biasa)
 function Add-ToSystemPath {
     param ([string]$DirToAdd)
     if ([string]::IsNullOrWhiteSpace($DirToAdd) -or !(Test-Path $DirToAdd)) { return }
 
-    $target = [EnvironmentVariableTarget]::Machine
-    $currentPath = [Environment]::GetEnvironmentVariable("Path", $target)
-    $paths = $currentPath -split ';' | Where-Object { $_ -ne "" }
+    $target = if ($script:IsAdmin) { [EnvironmentVariableTarget]::Machine } else { [EnvironmentVariableTarget]::User }
+    $scopeName = if ($script:IsAdmin) { "System (Machine)" } else { "User" }
 
-    if ($paths -notcontains $DirToAdd) {
-        $newPath = "$currentPath;$DirToAdd"
-        [Environment]::SetEnvironmentVariable("Path", $newPath, $target)
-        $env:Path = "$env:Path;$DirToAdd"
-        Write-Host "   [PATH] Ditambahkan ke System PATH: $DirToAdd" -ForegroundColor Green
-    } else {
-        Write-Host "   [PATH] Sudah terdaftar di System PATH: $DirToAdd" -ForegroundColor Cyan
+    try {
+        $currentPath = [Environment]::GetEnvironmentVariable("Path", $target)
+        $paths = if ($currentPath) { $currentPath -split ';' | Where-Object { $_ -ne "" } } else { @() }
+
+        if ($paths -notcontains $DirToAdd) {
+            $newPath = if ($currentPath) { "$currentPath;$DirToAdd" } else { $DirToAdd }
+            [Environment]::SetEnvironmentVariable("Path", $newPath, $target)
+            $env:Path = "$env:Path;$DirToAdd"
+            Write-Host "   [PATH] Ditambahkan ke PATH ($scopeName): $DirToAdd" -ForegroundColor Green
+        } else {
+            Write-Host "   [PATH] Sudah terdaftar di PATH ($scopeName): $DirToAdd" -ForegroundColor Cyan
+        }
+    } catch {
+        # Fallback jika menulis ke Machine gagal (misal SecurityException/akses ditolak):
+        try {
+            $userPath = [Environment]::GetEnvironmentVariable("Path", [EnvironmentVariableTarget]::User)
+            $uPaths = if ($userPath) { $userPath -split ';' | Where-Object { $_ -ne "" } } else { @() }
+            if ($uPaths -notcontains $DirToAdd) {
+                $newUPath = if ($userPath) { "$userPath;$DirToAdd" } else { $DirToAdd }
+                [Environment]::SetEnvironmentVariable("Path", $newUPath, [EnvironmentVariableTarget]::User)
+                $env:Path = "$env:Path;$DirToAdd"
+                Write-Host "   [PATH] Ditambahkan ke User PATH (Fallback): $DirToAdd" -ForegroundColor Green
+            }
+        } catch {
+            Write-Host "   [PATH] Gagal menyimpan ke registry PATH: $_" -ForegroundColor Yellow
+        }
     }
 }
 
-# 4. Fungsi Helper Set System Env Variable
+# 4. Fungsi Helper Set System Env Variable (Dual-Mode: Machine jika Admin, User jika Pengguna Biasa)
 function Set-SystemEnvVar {
     param ([string]$Name, [string]$Value)
-    [Environment]::SetEnvironmentVariable($Name, $Value, [EnvironmentVariableTarget]::Machine)
-    [Environment]::SetEnvironmentVariable($Name, $Value, [EnvironmentVariableTarget]::Process)
-    Write-Host "   [ENV] $Name = $Value" -ForegroundColor Green
+    $target = if ($script:IsAdmin) { [EnvironmentVariableTarget]::Machine } else { [EnvironmentVariableTarget]::User }
+    $scopeName = if ($script:IsAdmin) { "Machine" } else { "User" }
+    try {
+        [Environment]::SetEnvironmentVariable($Name, $Value, $target)
+        [Environment]::SetEnvironmentVariable($Name, $Value, [EnvironmentVariableTarget]::Process)
+        Write-Host "   [ENV] $Name = $Value ($scopeName)" -ForegroundColor Green
+    } catch {
+        try {
+            [Environment]::SetEnvironmentVariable($Name, $Value, [EnvironmentVariableTarget]::User)
+            [Environment]::SetEnvironmentVariable($Name, $Value, [EnvironmentVariableTarget]::Process)
+            Write-Host "   [ENV] $Name = $Value (User Fallback)" -ForegroundColor Green
+        } catch {
+            [Environment]::SetEnvironmentVariable($Name, $Value, [EnvironmentVariableTarget]::Process)
+            Write-Host "   [ENV] $Name = $Value (Process Saja)" -ForegroundColor Yellow
+        }
+    }
 }
 
 # 4.1. Helper Parser Argumen CLI (Mencegah bug quoting PowerShell Start-Process)
@@ -316,10 +365,22 @@ function Create-AppShortcut {
     try {
         $wsh = New-Object -ComObject WScript.Shell
 
-        # 1. Desktop Publik (Muncul di layar desktop semua mahasiswa/dosen)
-        $publicDesktop = [Environment]::GetFolderPath("CommonDesktopDirectory")
-        if (Test-Path $publicDesktop) {
-            $lnk1 = Join-Path $publicDesktop "$ShortcutName.lnk"
+        # Tentukan lokasi Desktop dan Programs (Publik jika Admin, Profil User jika Non-Admin)
+        $desktopDir = if ($script:IsAdmin) {
+            [Environment]::GetFolderPath("CommonDesktopDirectory")
+        } else {
+            [Environment]::GetFolderPath("Desktop")
+        }
+
+        $programsDir = if ($script:IsAdmin) {
+            [Environment]::GetFolderPath("CommonPrograms")
+        } else {
+            [Environment]::GetFolderPath("Programs")
+        }
+
+        # 1. Desktop
+        if (Test-Path $desktopDir) {
+            $lnk1 = Join-Path $desktopDir "$ShortcutName.lnk"
             $sc1 = $wsh.CreateShortcut($lnk1)
             $sc1.TargetPath = $TargetExe
             $sc1.WorkingDirectory = $WorkingDir
@@ -327,10 +388,9 @@ function Create-AppShortcut {
             $sc1.Save()
         }
 
-        # 2. Start Menu Program Publik (Muncul saat Windows Search / Start Menu diketik)
-        $commonPrograms = [Environment]::GetFolderPath("CommonPrograms")
-        if (Test-Path $commonPrograms) {
-            $lnk2 = Join-Path $commonPrograms "$ShortcutName.lnk"
+        # 2. Start Menu Program (Muncul saat Windows Search / Start Menu diketik)
+        if (Test-Path $programsDir) {
+            $lnk2 = Join-Path $programsDir "$ShortcutName.lnk"
             $sc2 = $wsh.CreateShortcut($lnk2)
             $sc2.TargetPath = $TargetExe
             $sc2.WorkingDirectory = $WorkingDir
@@ -3012,6 +3072,17 @@ while ($running) {
 
     switch ($choice) {
         "1" {
+            if (-not $script:IsAdmin) {
+                Write-Host "`n[!] INFORMASI HAK AKSES SISTEM:" -ForegroundColor Yellow
+                Write-Host "    Sesi ini berjalan sebagai Pengguna Standar (Non-Administrator)." -ForegroundColor Yellow
+                Write-Host "    Beberapa software tingkat sistem (seperti driver VirtualBox, Laragon ke C:\, XAMPP)" -ForegroundColor Gray
+                Write-Host "    mungkin memerlukan konfirmasi Administrator saat proses instalasi berlangsung." -ForegroundColor Gray
+                Write-Host "    Skrip akan memasang semua software yang mendukung user-space dan mengonfigurasi User PATH." -ForegroundColor Gray
+                $konfirmasi = Read-Host "    Lanjutkan proses instalasi sekarang? (Y/T, default: Y)"
+                if ($konfirmasi -match "^[Tt]") {
+                    continue
+                }
+            }
             Run-FullInstallation
             Wait-EnterOnly -PromptMessage "[Tekan tombol ENTER untuk kembali ke Menu Utama...]"
         }
