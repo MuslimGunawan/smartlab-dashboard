@@ -16,11 +16,11 @@
 #   7. Git for Windows (Wajib untuk Dart SDK, Flutter, Composer, & VS Code)
 #   8. Visual Studio Code
 #   9. Android Studio
-#  10. Python 3.12 (with PIP & System PATH)
+#  10. Python (Versi Terbaru 3.13 / 3.12 LTS with PIP & System PATH)
 #  11. Java JDK 17 LTS (with JAVA_HOME & System PATH)
-#  12. Node.js LTS (with NPM & Global PATH)
-#  13. Flutter SDK (All Doctor Checks Passed & Auto-Configured)
-#  14. Composer & Laravel Setup
+#  12. Node.js LTS (Versi Terbaru v22 LTS with NPM & Global PATH)
+#  13. Flutter SDK (Versi Terbaru 3.29/3.27 Stable & Auto-Configured)
+#  14. Composer & Laravel Setup (Terkoneksi ke PHP Terbaru Laragon)
 #  15. Oracle VM VirtualBox
 #  16. Apache NetBeans IDE
 #  17. QGIS Desktop
@@ -29,7 +29,7 @@
 #  20. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.8"
+$SCRIPT_CURRENT_VERSION = "3.3.9"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 20 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -998,8 +998,12 @@ function Setup-Git {
 
 # 6. Fungsi Khusus Setup Java JDK & JAVA_HOME
 function Setup-JavaJDK {
+    $jdkMirrors = @(
+        "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.13%2B11/OpenJDK17U-jdk_x64_windows_hotspot_17.0.13_11.msi"
+    )
     Install-AppSmart -Name "Java JDK 17 (OpenJDK Temurin)" `
                      -FilePattern @("*Temurin*17*.msi", "*jdk*17*.msi", "*Temurin*.msi") `
+                     -DownloadUrls $jdkMirrors `
                      -SilentArgs "ADDLOCAL=FeatureMain,FeatureEnvironment,FeatureJarFileRunWith,FeatureJavaHome /qn" `
                      -WingetId "EclipseAdoptium.Temurin.17.JDK" `
                      -CheckPath @("C:\Program Files\Eclipse Adoptium\jdk-17*\bin\javac.exe", "C:\Program Files\Java\jdk-17*\bin\javac.exe")
@@ -1033,20 +1037,31 @@ function Setup-JavaJDK {
 
 # 7. Fungsi Khusus Setup Python & Pip PATH
 function Setup-Python {
-    Install-AppSmart -Name "Python 3.12 (with PIP)" `
-                     -FilePattern "*python*3.12*.exe" `
-                     -SilentArgs "/quiet InstallAllUsers=1 PrependPath=1" `
-                     -WingetId "Python.Python.3.12" `
-                     -CheckPath "C:\Program Files\Python312\python.exe"
+    $pythonMirrors = @(
+        "https://www.python.org/ftp/python/3.13.2/python-3.13.2-amd64.exe",
+        "https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe",
+        "https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe"
+    )
+    Install-AppSmart -Name "Python (Latest with PIP)" `
+                     -FilePattern @("*python*3.13*.exe", "*python*3.12*.exe", "*python*.exe") `
+                     -DownloadUrls $pythonMirrors `
+                     -SilentArgs "/quiet InstallAllUsers=1 PrependPath=1 Include_pip=1" `
+                     -WingetId "Python.Python.3.13" `
+                     -CheckPath @("C:\Program Files\Python313\python.exe", "C:\Program Files\Python312\python.exe", "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe", "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe")
 
     $pyPaths = @(
-        "$env:LOCALAPPDATA\Programs\Python\Python312",
-        "C:\Program Files\Python312"
+        "C:\Program Files\Python313",
+        "C:\Program Files\Python312",
+        "$env:LOCALAPPDATA\Programs\Python\Python313",
+        "$env:LOCALAPPDATA\Programs\Python\Python312"
     )
     foreach ($p in $pyPaths) {
         if (Test-Path $p) {
             Add-ToSystemPath -DirToAdd $p
-            Add-ToSystemPath -DirToAdd (Join-Path $p "Scripts")
+            $pScripts = Join-Path $p "Scripts"
+            if (Test-Path $pScripts) { Add-ToSystemPath -DirToAdd $pScripts }
+            if ($env:Path -notlike "*$p*") { $env:Path = "$p;$pScripts;" + $env:Path }
+            Write-Host "   [OK] Python berhasil didaftarkan ke System PATH ($p)" -ForegroundColor Green
             break
         }
     }
@@ -1249,10 +1264,20 @@ function Setup-LaragonStack {
     # 5. DETEKSI PHP TERBARU & OPTIMASI LENGKAP SEMUA php.ini AGAR COMPOSER & LARAVEL BEBAS ERROR
     Write-Host "`n   [i] Mengonfigurasi seluruh php.ini dan mengaktifkan ekstensi lengkap (bebas warning/error)..." -ForegroundColor Yellow
     
-    # Cari PHP versi terbaru di C:\laragon\bin\php
+    # Cari PHP versi terbaru di C:\laragon\bin\php (otomatis urutkan secara semantik: 8.5 > 8.4 > 8.3 > 8.2)
     $newestPhpDir = Get-ChildItem -Path "$targetLaragon\bin\php" -Directory -ErrorAction SilentlyContinue |
                     Where-Object { Test-Path (Join-Path $_.FullName "php.exe") } |
-                    Sort-Object Name -Descending | Select-Object -First 1
+                    Sort-Object {
+                        if ($_.Name -match '(\d+(?:\.\d+)+)') {
+                            try {
+                                $vParts = $matches[1].Split('.')
+                                $major = [int]$vParts[0]
+                                $minor = if ($vParts.Count -gt 1) { [int]$vParts[1] } else { 0 }
+                                $build = if ($vParts.Count -gt 2) { [int]$vParts[2] } else { 0 }
+                                [Version]::new($major, $minor, $build)
+                            } catch { [Version]::new(0, 0, 0) }
+                        } else { [Version]::new(0, 0, 0) }
+                    } -Descending | Select-Object -First 1
 
     if ($newestPhpDir) {
         Write-Host "   [OK] PHP Terbaru Terdeteksi: $($newestPhpDir.Name)" -ForegroundColor Green
@@ -1341,10 +1366,20 @@ function Setup-LaragonStack {
 function Sync-UnifiedLaragonPhp {
     Write-Host "`n   [>>>] Menyatukan seluruh ekosistem PHP ke versi terbaru Laragon (C:\laragon\bin\php)..." -ForegroundColor Cyan
     
-    # 1. Cari PHP versi terbaru di C:\laragon\bin\php (otomatis urutkan dari 8.5/8.4/8.3 dst)
+    # 1. Cari PHP versi terbaru di C:\laragon\bin\php (otomatis urutkan secara semantik: 8.5 > 8.4 > 8.3 > 8.2)
     $laragonPhps = Get-ChildItem -Path "C:\laragon\bin\php" -Directory -ErrorAction SilentlyContinue |
                    Where-Object { Test-Path (Join-Path $_.FullName "php.exe") } |
-                   Sort-Object Name -Descending
+                   Sort-Object {
+                       if ($_.Name -match '(\d+(?:\.\d+)+)') {
+                           try {
+                               $vParts = $matches[1].Split('.')
+                               $major = [int]$vParts[0]
+                               $minor = if ($vParts.Count -gt 1) { [int]$vParts[1] } else { 0 }
+                               $build = if ($vParts.Count -gt 2) { [int]$vParts[2] } else { 0 }
+                               [Version]::new($major, $minor, $build)
+                           } catch { [Version]::new(0, 0, 0) }
+                       } else { [Version]::new(0, 0, 0) }
+                   } -Descending
 
     if (-not $laragonPhps) {
         Write-Host "   [!] Belum ada folder PHP terdeteksi di C:\laragon\bin\php." -ForegroundColor Yellow
@@ -1528,8 +1563,13 @@ function Setup-XamppStack {
 
 # 10. Fungsi Setup Node.js (LTS) & NPM
 function Setup-NodeJS {
+    $nodeMirrors = @(
+        "https://nodejs.org/dist/v22.14.0/node-v22.14.0-x64.msi",
+        "https://nodejs.org/dist/v20.18.3/node-v20.18.3-x64.msi"
+    )
     Install-AppSmart -Name "Node.js LTS (with NPM)" `
-                     -FilePattern "*node*.msi" `
+                     -FilePattern @("*node*v*.msi", "*node*.msi") `
+                     -DownloadUrls $nodeMirrors `
                      -SilentArgs "/qn" `
                      -WingetId "OpenJS.NodeJS.LTS" `
                      -CheckPath "C:\Program Files\nodejs\node.exe"
@@ -1542,6 +1582,7 @@ function Setup-NodeJS {
             New-Item -ItemType Directory -Path $npmGlobalPath -Force | Out-Null
         }
         Add-ToSystemPath -DirToAdd $npmGlobalPath
+        if ($env:Path -notlike "*$nodePath*") { $env:Path = "$nodePath;$npmGlobalPath;" + $env:Path }
 
         # Aktifkan izin eksekusi skrip PowerShell agar npm.ps1 dan npx.ps1 tidak diblokir
         try {
@@ -1567,7 +1608,17 @@ function Setup-ComposerAndLaravel {
     $phpPath = $null
     $laragonPhps = Get-ChildItem -Path "C:\laragon\bin\php" -Directory -ErrorAction SilentlyContinue |
                    Where-Object { Test-Path (Join-Path $_.FullName "php.exe") } |
-                   Sort-Object Name -Descending
+                   Sort-Object {
+                       if ($_.Name -match '(\d+(?:\.\d+)+)') {
+                           try {
+                               $vParts = $matches[1].Split('.')
+                               $major = [int]$vParts[0]
+                               $minor = if ($vParts.Count -gt 1) { [int]$vParts[1] } else { 0 }
+                               $build = if ($vParts.Count -gt 2) { [int]$vParts[2] } else { 0 }
+                               [Version]::new($major, $minor, $build)
+                           } catch { [Version]::new(0, 0, 0) }
+                       } else { [Version]::new(0, 0, 0) }
+                   } -Descending
 
     if ($laragonPhps) {
         $phpPath = Join-Path $laragonPhps[0].FullName "php.exe"
@@ -2016,8 +2067,9 @@ function Setup-FlutterSDK {
             # 2. Unduh Flutter SDK resmi dari Storage API Google CDN
             Write-Host "   [i] Mengunduh Flutter SDK Stable dari Google CDN..." -ForegroundColor Yellow
             $flutterMirrors = @(
-                "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.24.5-stable.zip",
-                "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.22.2-stable.zip"
+                "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.29.0-stable.zip",
+                "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.27.4-stable.zip",
+                "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.24.5-stable.zip"
             )
             $destZip = Join-Path $AppsDir "flutter_windows_stable.zip"
             $downloaded = Download-FileWithFastMirrors -Urls $flutterMirrors -DestinationPath $destZip -ActivityTitle "Mengunduh Flutter SDK"
@@ -2215,19 +2267,33 @@ function Test-LabSoftwareStatus {
     $env:COMPOSER_NO_INTERACTION = "1"
     $env:COMPOSER_ALLOW_SUPERUSER = "1"
 
-    # Pastikan PHP terdaftar di PATH sesi jika terpasang
-    $phpSearch = @(
-        "C:\laragon\bin\php\php-*\php.exe",
-        "C:\laragon\bin\php\*\php.exe",
-        "C:\xampp\php\php.exe"
-    )
-    foreach ($pattern in $phpSearch) {
-        $found = Get-Item $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($found) {
-            $pDir = Split-Path -Parent $found.FullName
-            if ($env:Path -notlike "*$pDir*") { $env:Path = "$pDir;" + $env:Path }
-            break
+    # Pastikan PHP versi TERBARU dari Laragon terdaftar paling depan di PATH sesi
+    $laragonPhps = Get-ChildItem -Path "C:\laragon\bin\php" -Directory -ErrorAction SilentlyContinue |
+                   Where-Object { Test-Path (Join-Path $_.FullName "php.exe") } |
+                   Sort-Object {
+                       if ($_.Name -match '(\d+(?:\.\d+)+)') {
+                           try {
+                               $vParts = $matches[1].Split('.')
+                               $major = [int]$vParts[0]
+                               $minor = if ($vParts.Count -gt 1) { [int]$vParts[1] } else { 0 }
+                               $build = if ($vParts.Count -gt 2) { [int]$vParts[2] } else { 0 }
+                               [Version]::new($major, $minor, $build)
+                           } catch { [Version]::new(0, 0, 0) }
+                       } else { [Version]::new(0, 0, 0) }
+                   } -Descending
+
+    $activePhpDir = $null
+    if ($laragonPhps) {
+        $activePhpDir = $laragonPhps[0].FullName
+    } elseif (Test-Path "C:\xampp\php\php.exe") {
+        $activePhpDir = "C:\xampp\php"
+    }
+
+    if ($activePhpDir) {
+        $cleanParts = ($env:Path -split ';') | Where-Object {
+            $_ -ne "" -and $_ -notlike "*\xampp\php*" -and $_ -notlike "*\laragon\bin\php\*"
         }
+        $env:Path = "$activePhpDir;" + ($cleanParts -join ';')
     }
 
     $cliChecks = @(
@@ -2256,23 +2322,15 @@ function Test-LabSoftwareStatus {
     foreach ($chk in $cliChecks) {
         Write-Host -NoNewline ("- {0,-18}: " -f $chk.Name)
         try {
-            $job = Start-Job -ScriptBlock $chk.Cmd
-            if (Wait-Job $job -Timeout 4) {
-                $rawOutput = Receive-Job $job -ErrorAction SilentlyContinue
-                Remove-Job $job -Force -ErrorAction SilentlyContinue
-                $res = ($rawOutput | Out-String).Trim()
-                if (-not [string]::IsNullOrWhiteSpace($res)) {
-                    $lines = @($res -split "`r?`n")
-                    $cleanLines = @($lines | Where-Object { $_ -notmatch '(?i)warning:' -and -not [string]::IsNullOrWhiteSpace($_) })
-                    $firstLine = if ($cleanLines.Count -gt 0) { [string]$cleanLines[0] } else { [string]$lines[0] }
-                    Write-Host $firstLine -ForegroundColor Green
-                } else {
-                    Write-Host "Belum Terdeteksi di PATH" -ForegroundColor Yellow
-                }
+            $raw = & $chk.Cmd 2>&1 | Out-String
+            $trimmed = $raw.Trim()
+            if (-not [string]::IsNullOrWhiteSpace($trimmed)) {
+                $lines = @($trimmed -split "`r?`n")
+                $cleanLines = @($lines | Where-Object { $_ -notmatch '(?i)warning:' -and -not [string]::IsNullOrWhiteSpace($_) })
+                $firstLine = if ($cleanLines.Count -gt 0) { [string]$cleanLines[0] } else { [string]$lines[0] }
+                Write-Host $firstLine.Trim() -ForegroundColor Green
             } else {
-                Stop-Job $job -Force -ErrorAction SilentlyContinue
-                Remove-Job $job -Force -ErrorAction SilentlyContinue
-                Write-Host "Belum Merespons / Timeout" -ForegroundColor Yellow
+                Write-Host "Belum Terdeteksi di PATH" -ForegroundColor Yellow
             }
         } catch {
             Write-Host "Belum Terinstal / Perlu Restart Shell" -ForegroundColor Red
@@ -2378,16 +2436,25 @@ function Run-FullInstallation {
     # 3. Git for Windows (Wajib untuk Dart SDK, Flutter, Composer, & VS Code)
     Setup-Git
 
-    # 4. Visual Studio Code (Otomatis Silent)
-    Install-AppSmart -Name "Visual Studio Code" -FilePattern "*Code*.exe" -SilentArgs "/VERYSILENT /NORESTART /MERGETASKS=!runcode,addcontextmenufiles,addcontextmenufolders,associatewithfiles,addtopath" -WingetId "Microsoft.VisualStudioCode" -CheckPath "$env:LOCALAPPDATA\Programs\Microsoft VS Code\Code.exe"
+    # 4. Visual Studio Code (Otomatis Silent dengan Direct CDN Mirror)
+    $vscodeMirrors = @(
+        "https://update.code.visualstudio.com/latest/win32-x64-user/stable",
+        "https://az764295.vo.msecnd.net/stable/latest/VSCodeUserSetup-x64.exe"
+    )
+    Install-AppSmart -Name "Visual Studio Code" `
+                     -FilePattern @("*VSCode*Setup*.exe", "*code*setup*.exe", "*Code*.exe") `
+                     -DownloadUrls $vscodeMirrors `
+                     -SilentArgs "/VERYSILENT /NORESTART /MERGETASKS=!runcode,addcontextmenufiles,addcontextmenufolders,associatewithfiles,addtopath" `
+                     -WingetId "Microsoft.VisualStudioCode" `
+                     -CheckPath @("$env:LOCALAPPDATA\Programs\Microsoft VS Code\Code.exe", "C:\Program Files\Microsoft VS Code\Code.exe")
 
-    # 5. Python 3.12 (Otomatis Silent + PATH)
+    # 5. Python (Versi Terbaru 3.13 / 3.12 LTS with PIP & System PATH)
     Setup-Python
 
     # 6. Java JDK 17 (Otomatis Silent + JAVA_HOME)
     Setup-JavaJDK
 
-    # 7. Node.js LTS & NPM (Otomatis Silent + Global PATH)
+    # 7. Node.js LTS (Versi Terbaru v22 LTS with NPM & Global PATH)
     Setup-NodeJS
 
     # 8. Oracle VM VirtualBox & Extension Pack (Otomatis Silent dengan Multi-Mirror Google Drive & CDN)
@@ -2465,7 +2532,13 @@ function Run-FullInstallation {
                      -CheckPath @("C:\Program Files\Android\Android Studio\bin\studio64.exe", "C:\Program Files\Android Studio\bin\studio64.exe", "C:\Program Files (x86)\Android\Android Studio\bin\studio64.exe")
 
     # 11. QGIS Desktop (Otomatis Silent)
-    Install-AppSmart -Name "QGIS Desktop" -FilePattern "*QGIS*.msi" -SilentArgs "/qn" -WingetId "OSGeo.QGIS" -CheckPath "C:\Program Files\QGIS *\bin\qgis-bin.exe"
+    $qgisMirrors = @("https://qgis.org/downloads/QGIS-OSGeo4W-3.34.14-1.msi")
+    Install-AppSmart -Name "QGIS Desktop" `
+                     -FilePattern "*QGIS*.msi" `
+                     -DownloadUrls $qgisMirrors `
+                     -SilentArgs "/qn" `
+                     -WingetId "OSGeo.QGIS" `
+                     -CheckPath "C:\Program Files\QGIS *\bin\qgis-bin.exe"
 
     # 12. Microsoft Visual Studio 2022 Community (Desktop development with C++ Workload - Support 100% Offline Layout)
     Setup-VisualStudio
@@ -2601,10 +2674,14 @@ function Start-DownloadOnlyMaster {
             Urls = @("https://update.code.visualstudio.com/latest/win32-x64-user/stable", "https://az764295.vo.msecnd.net/stable/latest/VSCodeUserSetup-x64.exe")
         },
         @{
-            Name = "Python 3.12 (with PIP)"
-            FilePattern = @("*python-3.12*.exe", "*python*.exe")
-            DestFile = "python-3.12.8-amd64.exe"
-            Urls = @("https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe", "https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe")
+            Name = "Python (Versi Terbaru 3.13 / 3.12 with PIP)"
+            FilePattern = @("*python*3.13*.exe", "*python*3.12*.exe", "*python*.exe")
+            DestFile = "python-3.13.2-amd64.exe"
+            Urls = @(
+                "https://www.python.org/ftp/python/3.13.2/python-3.13.2-amd64.exe",
+                "https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe",
+                "https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe"
+            )
         },
         @{
             Name = "Java JDK 17 LTS (Eclipse Adoptium Temurin)"
@@ -2670,10 +2747,14 @@ function Start-DownloadOnlyMaster {
             Urls = @("https://github.com/arduino/arduino-ide/releases/download/2.3.10/arduino-ide_2.3.10_Windows_64bit.msi", "https://downloads.arduino.cc/arduino-ide/arduino-ide_2.3.10_Windows_64bit.msi")
         },
         @{
-            Name = "Flutter SDK"
+            Name = "Flutter SDK (Versi Terbaru 3.29/3.27 Stable)"
             FilePattern = @("*flutter*windows*.zip", "*flutter*.zip")
             DestFile = "flutter_windows_stable.zip"
-            Urls = @("https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.24.5-stable.zip", "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.22.2-stable.zip")
+            Urls = @(
+                "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.29.0-stable.zip",
+                "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.27.4-stable.zip",
+                "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.24.5-stable.zip"
+            )
         },
         @{
             Name = "Laragon 6.0.0 (WAMP Installer)"
