@@ -29,7 +29,7 @@
 #  20. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.12"
+$SCRIPT_CURRENT_VERSION = "3.3.13"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 20 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -1450,6 +1450,35 @@ function Sync-UnifiedLaragonPhp {
     $topPhpDir = $topPhp.FullName
     $topPhpExe = Join-Path $topPhpDir "php.exe"
 
+    # Periksa apakah ada versi PHP yang sedang aktif saat ini
+    $activePhpCmd = Get-Command php -ErrorAction SilentlyContinue
+    $currentActiveVer = "Belum Terdeteksi"
+    if ($activePhpCmd) {
+        try {
+            $curOut = & $activePhpCmd.Source -v 2>&1 | Out-String
+            if ($curOut -match 'PHP\s+(\d+(?:\.\d+)+)') {
+                $currentActiveVer = $matches[1]
+            }
+        } catch {}
+    }
+
+    Write-Host "   [i] Versi PHP aktif saat ini : $currentActiveVer" -ForegroundColor DarkGray
+    Write-Host "   [i] Versi PHP tertinggi      : $($topPhp.Name)" -ForegroundColor Green
+
+    if ($topPhp.Name -match '(\d+(?:\.\d+)+)') {
+        $topVerStr = $matches[1]
+        try {
+            $topV = [Version]$topVerStr
+            if ($currentActiveVer -ne "Belum Terdeteksi") {
+                $curV = [Version]$currentActiveVer
+                if ($curV -lt $topV) {
+                    Write-Host "   [UPGRADE OTOMATIS] Versi PHP aktif ($currentActiveVer) lebih rendah dari versi terbaru ($topVerStr)." -ForegroundColor Yellow
+                    Write-Host "   -> Mengganti PHP aktif ke versi tertinggi: $($topPhp.Name)!" -ForegroundColor Green
+                }
+            }
+        } catch {}
+    }
+
     Write-Host "   [OK] PHP Utama Sistem Dikunci ke: $($topPhp.Name)" -ForegroundColor Green
 
     # 2. Daftarkan ke C:\laragon\usr\laragon.ini sebagai versi PHP default Laragon
@@ -1465,16 +1494,18 @@ function Sync-UnifiedLaragonPhp {
         } catch {}
     }
 
-    # 3. Bersihkan PATH sistem dari versi PHP lain (XAMPP atau PHP lama) dan daftarkan PHP terbaru ini di System PATH
+    # 3. Bersihkan PATH dari versi PHP lain dan daftarkan PHP terbaru ini di System/User PATH
     try {
-        $target = [EnvironmentVariableTarget]::Machine
-        $currentSysPath = [Environment]::GetEnvironmentVariable("Path", $target)
-        if ($currentSysPath) {
-            $sysParts = ($currentSysPath -split ';') | Where-Object {
-                $_ -ne "" -and $_ -notlike "*\xampp\php*" -and $_ -notlike "*\laragon\bin\php\*"
+        $targets = if ($script:IsAdmin) { @([EnvironmentVariableTarget]::Machine, [EnvironmentVariableTarget]::User) } else { @([EnvironmentVariableTarget]::User) }
+        foreach ($tgt in $targets) {
+            $pVal = [Environment]::GetEnvironmentVariable("Path", $tgt)
+            if ($pVal) {
+                $parts = ($pVal -split ';') | Where-Object {
+                    $_ -ne "" -and $_ -notlike "*\xampp\php*" -and $_ -notlike "*\laragon\bin\php\*"
+                }
+                $newP = "$topPhpDir;" + ($parts -join ';')
+                [Environment]::SetEnvironmentVariable("Path", $newP, $tgt)
             }
-            $newSysPath = "$topPhpDir;" + ($sysParts -join ';')
-            [Environment]::SetEnvironmentVariable("Path", $newSysPath, $target)
         }
     } catch {}
 
@@ -2367,8 +2398,49 @@ function Setup-FlutterSDK {
         $env:ANDROID_SDK_ROOT = $detectedSdk
 
         $platTools = Join-Path $detectedSdk "platform-tools"
-        $cmdTools = Join-Path $detectedSdk "cmdline-tools\latest\bin"
         if (Test-Path $platTools) { Add-ToSystemPath -DirToAdd $platTools }
+
+        # B.1. Pastikan cmdline-tools;latest Terpasang (Kritis untuk Hilangkan Error Flutter Doctor)
+        $cmdToolsBat = Join-Path $detectedSdk "cmdline-tools\latest\bin\sdkmanager.bat"
+        if (-not (Test-Path $cmdToolsBat)) {
+            Write-Host "   [i] Memeriksa Android SDK Command-Line Tools (cmdline-tools;latest)..." -ForegroundColor Yellow
+            $cmdToolsZipUrl = "https://dl.google.com/android/repository/commandlinetools-win-11076708_latest.zip"
+            $destCmdZip = Join-Path $AppsDir "commandlinetools-win_latest.zip"
+
+            # Cek apakah sudah ada file zip di folder Apps/ atau unduh dari Google CDN resmi
+            $cmdZipFile = Get-ChildItem -Path $AppsDir -Filter "*commandlinetools*.zip" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $cmdZipFile) {
+                Write-Host "   [>>>] Mengunduh official Google cmdline-tools dari CDN Google..." -ForegroundColor Cyan
+                $dlSuccess = Download-FileWithFastMirrors -Urls @($cmdToolsZipUrl) -DestinationPath $destCmdZip -ActivityTitle "Mengunduh Android cmdline-tools"
+                if ($dlSuccess -and (Test-Path $destCmdZip)) {
+                    $cmdZipFile = Get-Item $destCmdZip
+                }
+            }
+
+            if ($cmdZipFile) {
+                Write-Host "   [i] Memasang cmdline-tools;latest ke $($detectedSdk)\cmdline-tools\latest..." -ForegroundColor Yellow
+                $tempExtractDir = Join-Path $env:TEMP "android_cmdline_temp"
+                if (Test-Path $tempExtractDir) { Remove-Item -Path $tempExtractDir -Recurse -Force -ErrorAction SilentlyContinue }
+                New-Item -ItemType Directory -Path $tempExtractDir -Force | Out-Null
+                
+                $extracted = Expand-LabArchive -ArchivePath $cmdZipFile.FullName -DestinationDir $tempExtractDir
+                $extractedSrc = Join-Path $tempExtractDir "cmdline-tools"
+                if (-not (Test-Path $extractedSrc)) {
+                    $extractedSrc = Get-ChildItem -Path $tempExtractDir -Directory -Recurse | Where-Object { Test-Path (Join-Path $_.FullName "bin\sdkmanager.bat") } | Select-Object -First 1
+                    if ($extractedSrc) { $extractedSrc = $extractedSrc.FullName }
+                }
+
+                if ($extractedSrc -and (Test-Path $extractedSrc)) {
+                    $targetLatest = Join-Path $detectedSdk "cmdline-tools\latest"
+                    if (-not (Test-Path $targetLatest)) { New-Item -ItemType Directory -Path $targetLatest -Force | Out-Null }
+                    & robocopy $extractedSrc $targetLatest /E /R:1 /W:1 /NP /NFL /NDL | Out-Null
+                    Write-Host "   [OK] Android cmdline-tools;latest berhasil dipasang sempurna!" -ForegroundColor Green
+                }
+                Remove-Item -Path $tempExtractDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        $cmdTools = Join-Path $detectedSdk "cmdline-tools\latest\bin"
         if (Test-Path $cmdTools) { Add-ToSystemPath -DirToAdd $cmdTools }
 
         Write-Host "   [OK] Android SDK dikunci ke: $detectedSdk" -ForegroundColor Green
@@ -2415,42 +2487,97 @@ function Setup-FlutterSDK {
         }
     }
 
+    # D.1. Deteksi & Kunci Direktori Android Studio untuk Flutter
+    $studioSearch = @(
+        "C:\Program Files\Android\Android Studio",
+        "C:\Program Files\Android Studio",
+        "C:\Program Files (x86)\Android\Android Studio",
+        "$env:LOCALAPPDATA\Programs\Android Studio"
+    )
+    foreach ($asDir in $studioSearch) {
+        if (Test-Path $asDir) {
+            & flutter config --android-studio-dir "$asDir" | Out-Null
+            Write-Host "   [OK] Android Studio dikunci ke: $asDir" -ForegroundColor Green
+            break
+        }
+    }
+
     # E. Aktifkan platform desktop Windows, Web, dan Android
     & flutter config --enable-windows-desktop --enable-web --enable-android --no-analytics | Out-Null
     Write-Host "   [OK] Platform Windows Desktop, Web & Android diaktifkan!" -ForegroundColor Green
 
-    # F. Auto-Accept Android Licenses (Non-Interaktif & Hashes Generator)
+    # F. Auto-Accept Android Licenses Lengkap (Offline Hashes & sdkmanager runner)
     Write-Host "   [i] Menyetujui semua lisensi Android SDK secara otomatis (Accept Licenses)..." -ForegroundColor Yellow
     if ($detectedSdk) {
         try {
             $licensesDir = Join-Path $detectedSdk "licenses"
             if (-not (Test-Path $licensesDir)) { New-Item -ItemType Directory -Path $licensesDir -Force | Out-Null }
-            $sdkLicensePath = Join-Path $licensesDir "android-sdk-license"
-            $sdkLicenseContent = "24333f8a63cbd8224f723649d2a47016e7f1539a`r`n89338d0d9b183fb97af112d34f2d18586594f3b0`r`nd56f5187479451eabf01fb78af6dfcb131a6481e`r`n"
-            [System.IO.File]::WriteAllText($sdkLicensePath, $sdkLicenseContent)
-
-            $previewLicensePath = Join-Path $licensesDir "android-sdk-preview-license"
-            $previewLicenseContent = "84831b9409646a53fe44263426949611a3454ed4`r`n"
-            [System.IO.File]::WriteAllText($previewLicensePath, $previewLicenseContent)
+            
+            $sdkLicenses = @(
+                "24333f8a63cbd8224f723649d2a47016e7f1539a",
+                "89338d0d9b183fb97af112d34f2d18586594f3b0",
+                "d56f5187479451eabf01fb78af6dfcb131a6481e",
+                "601085b94cd77f0b54ff86406957099fed8072d0"
+            )
+            [System.IO.File]::WriteAllText((Join-Path $licensesDir "android-sdk-license"), ($sdkLicenses -join "`r`n") + "`r`n")
+            [System.IO.File]::WriteAllText((Join-Path $licensesDir "android-sdk-preview-license"), "84831b9409646a53fe44263426949611a3454ed4`r`n")
+            [System.IO.File]::WriteAllText((Join-Path $licensesDir "android-googletv-license"), "601085b94cd77f0b54ff86406957099fed8072d0`r`n")
+            [System.IO.File]::WriteAllText((Join-Path $licensesDir "android-sdk-arm-dbt-license"), "859f317696f67ef3d7f30a50a5560e7834b43903`r`n")
+            [System.IO.File]::WriteAllText((Join-Path $licensesDir "google-gdk-license"), "33b6a2b64607f11b759f320e69d7996f970cce40`r`n")
+            [System.IO.File]::WriteAllText((Join-Path $licensesDir "mips-android-sysimage-license"), "e9acab587f41bf414ce0fad2021ba4387adbe217`r`n")
+            
+            # Eksekusi persetujuan lisensi via sdkmanager jika cmdline-tools aktif
+            $sdkMgr = Join-Path $detectedSdk "cmdline-tools\latest\bin\sdkmanager.bat"
+            if (Test-Path $sdkMgr) {
+                $yesInputs = ("y`n" * 30)
+                $yesInputs | & $sdkMgr --licenses 2>&1 | Out-Null
+            }
         } catch {}
     }
     try {
-        $yesInputs = ("y`n" * 20)
+        $yesInputs = ("y`n" * 30)
         $yesInputs | & flutter doctor --android-licenses 2>&1 | Out-Null
         Write-Host "   [OK] Semua lisensi Android SDK disetujui (All Android licenses accepted)!" -ForegroundColor Green
     } catch {}
 
     # G. Integrasi VS Code & Ekstensi Flutter (Hilangkan status unknown di flutter doctor)
-    $codeCmd = Get-Command code -ErrorAction SilentlyContinue
-    if (-not $codeCmd) {
-        $userCode = "$env:LOCALAPPDATA\Programs\Microsoft VS Code\bin\code.cmd"
-        if (Test-Path $userCode) { $codeCmd = $userCode }
+    $vsCodeCandidates = @(
+        "$env:LOCALAPPDATA\Programs\Microsoft VS Code\Code.exe",
+        "C:\Program Files\Microsoft VS Code\Code.exe",
+        "C:\Program Files (x86)\Microsoft VS Code\Code.exe"
+    )
+    $detectedCodeExe = $null
+    foreach ($vsc in $vsCodeCandidates) {
+        if (Test-Path $vsc) { $detectedCodeExe = $vsc; break }
     }
-    if ($codeCmd) {
+    if ($detectedCodeExe) {
+        $codeDir = Split-Path -Parent $detectedCodeExe
+        $codeBin = Join-Path $codeDir "bin"
+        if (Test-Path $codeBin) { Add-ToSystemPath -DirToAdd $codeBin }
+        Add-ToSystemPath -DirToAdd $codeDir
+
+        # Daftarkan ke Registry App Paths agar Flutter Doctor mendeteksi versi VS Code
         try {
-            Write-Host "   [i] Mendaftarkan ekstensi Flutter pada Visual Studio Code..." -ForegroundColor Cyan
-            & $codeCmd --install-extension Dart-Code.flutter --force 2>&1 | Out-Null
+            $codeRegs = @(
+                "HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths\Code.exe",
+                "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\Code.exe"
+            )
+            foreach ($cr in $codeRegs) {
+                if (-not (Test-Path $cr)) { New-Item -Path $cr -Force -ErrorAction SilentlyContinue | Out-Null }
+                Set-ItemProperty -Path $cr -Name "(Default)" -Value $detectedCodeExe -Force -ErrorAction SilentlyContinue
+                Set-ItemProperty -Path $cr -Name "Path" -Value $codeDir -Force -ErrorAction SilentlyContinue
+            }
         } catch {}
+
+        # Pasang ekstensi Flutter pada VS Code
+        $codeCmd = Join-Path $codeBin "code.cmd"
+        if (-not (Test-Path $codeCmd)) { $codeCmd = Get-Command code -ErrorAction SilentlyContinue }
+        if ($codeCmd) {
+            try {
+                Write-Host "   [i] Mendaftarkan ekstensi Flutter pada Visual Studio Code..." -ForegroundColor Cyan
+                & $codeCmd --install-extension Dart-Code.flutter --force 2>&1 | Out-Null
+            } catch {}
+        }
     }
 
     # H. Jalankan Flutter Doctor ringkas
@@ -2624,6 +2751,15 @@ function Test-LabSoftwareStatus {
 }
 
 # ==============================================================================
+# FUNGSI JEDA STABILISASI ANTAR LANGKAH (Pacing 2 Detik Anti-Bentrok Sistem)
+# ==============================================================================
+function Wait-PacedStep {
+    param([int]$Seconds = 2)
+    Write-Host "   [i] Jeda stabilisasi sistem ($Seconds detik)..." -ForegroundColor DarkGray
+    Start-Sleep -Seconds $Seconds
+}
+
+# ==============================================================================
 # PROSEDUR OTOMASI LENGKAP STANDAR LAB TI
 # (Smart-Skip: Jika sudah ada dilewati, jika belum ada langsung dipasang)
 # ==============================================================================
@@ -2634,12 +2770,15 @@ function Run-FullInstallation {
 
     # 1. 7-Zip (High-Speed Multi-Format Archive Extractor)
     Setup-7Zip
+    Wait-PacedStep
 
     # 2. WinRAR (Lab Archive Support .rar/.zip)
     Setup-WinRAR
+    Wait-PacedStep
 
     # 3. Git for Windows (Wajib untuk Dart SDK, Flutter, Composer, & VS Code)
     Setup-Git
+    Wait-PacedStep
 
     # 4. Visual Studio Code (Otomatis Silent dengan Direct CDN Mirror)
     $vscodeMirrors = @(
@@ -2652,21 +2791,27 @@ function Run-FullInstallation {
                      -SilentArgs "/VERYSILENT /NORESTART /MERGETASKS=!runcode,addcontextmenufiles,addcontextmenufolders,associatewithfiles,addtopath" `
                      -WingetId "Microsoft.VisualStudioCode" `
                      -CheckPath @("$env:LOCALAPPDATA\Programs\Microsoft VS Code\Code.exe", "C:\Program Files\Microsoft VS Code\Code.exe")
+    Wait-PacedStep
 
     # 5. Python (Versi Terbaru 3.13 / 3.12 LTS with PIP & System PATH)
     Setup-Python
+    Wait-PacedStep
 
     # 6. Java JDK 17 (Otomatis Silent + JAVA_HOME)
     Setup-JavaJDK
+    Wait-PacedStep
 
     # 7. Node.js LTS (Versi Terbaru v22 LTS with NPM & Global PATH)
     Setup-NodeJS
+    Wait-PacedStep
 
     # 8. Oracle VM VirtualBox & Extension Pack (Otomatis Silent dengan Multi-Mirror Google Drive & CDN)
     Setup-VirtualBox
+    Wait-PacedStep
 
     # 9. Apache NetBeans (Otomatis Silent dengan Direct High-Speed GitHub Releases CDN & Bundled JDK)
     Setup-NetBeans
+    Wait-PacedStep
 
     # 10. Android Studio (Otomatis Silent dengan Multi-CDN Google Resmi & Winget Fallback)
     $androidStudioMirrors = @(
@@ -2680,6 +2825,7 @@ function Run-FullInstallation {
                      -SilentArgs "/S" `
                      -WingetId "Google.AndroidStudio" `
                      -CheckPath @("C:\Program Files\Android\Android Studio\bin\studio64.exe", "C:\Program Files\Android Studio\bin\studio64.exe", "C:\Program Files (x86)\Android\Android Studio\bin\studio64.exe")
+    Wait-PacedStep
 
     # 11. QGIS Desktop (Otomatis Silent)
     $qgisMirrors = @("https://qgis.org/downloads/QGIS-OSGeo4W-3.34.14-1.msi")
@@ -2689,9 +2835,11 @@ function Run-FullInstallation {
                      -SilentArgs "/qn" `
                      -WingetId "OSGeo.QGIS" `
                      -CheckPath "C:\Program Files\QGIS *\bin\qgis-bin.exe"
+    Wait-PacedStep
 
     # 12. Microsoft Visual Studio 2022 Community (Desktop development with C++ Workload - Support 100% Offline Layout)
     Setup-VisualStudio
+    Wait-PacedStep
 
     # 13. Arduino IDE (Arduino Uno, Nano, Mega, IoT)
     $arduinoMirrors = @(
@@ -2704,18 +2852,23 @@ function Run-FullInstallation {
                      -SilentArgs "/qn ALLUSERS=1" `
                      -WingetId "ArduinoSA.IDE.stable" `
                      -CheckPath @("C:\Program Files\Arduino IDE\Arduino IDE.exe", "C:\Program Files\Arduino\arduino.exe", "C:\Users\*\AppData\Local\Programs\Arduino IDE\Arduino IDE.exe", "C:\Users\*\AppData\Local\Arduino*\arduino*.exe", "C:\Program Files (x86)\Arduino\arduino.exe")
+    Wait-PacedStep
 
     # 14. Flutter SDK (All Doctor Checks Passed & Auto-Configured)
     Setup-FlutterSDK
+    Wait-PacedStep
 
     # 15. Laragon (Installer Resmi 6.0.0 + Auto-Overlay Stack Custom)
     Setup-LaragonStack
+    Wait-PacedStep
 
     # 16. Composer & Laravel Setup
     Setup-ComposerAndLaravel
+    Wait-PacedStep
 
     # 17. XAMPP (Otomatis Silent + Konfigurasi Port Anti-Bentrok)
     Setup-XamppStack
+    Wait-PacedStep
 
     # 18. Cisco Packet Tracer (Multi-Mirror Google Drive Resmi Lab TI)
     $ciscoMirrors = @(
@@ -2729,12 +2882,15 @@ function Run-FullInstallation {
                      -DownloadUrls $ciscoMirrors `
                      -SilentArgs "/VERYSILENT /NORESTART" `
                      -CheckPath @("C:\Program Files\Cisco Packet Tracer *\bin\PacketTracer.exe", "C:\Program Files (x86)\Cisco Packet Tracer *\bin\PacketTracer.exe")
+    Wait-PacedStep
 
     # 19. Embarcadero Delphi (Pihak Ketiga / Interaktif)
     Install-AppSmart -Name "Embarcadero Delphi" -FilePattern "*delphi*.exe" -IsInteractive -CheckPath @("C:\Program Files*\Embarcadero\Studio\*\bin\bds.exe", "C:\Program Files (x86)\Embarcadero\Studio\*\bin\bds.exe")
+    Wait-PacedStep
 
     # 20. Proteus Design Suite (Pihak Ketiga / Interaktif)
     Install-AppSmart -Name "Proteus Design Suite" -FilePattern "*proteus*.exe" -IsInteractive -CheckPath @("C:\Program Files*\Labcenter Electronics\Proteus *\BIN\PDS.EXE", "C:\Program Files (x86)\Labcenter Electronics\Proteus *\BIN\PDS.EXE")
+    Wait-PacedStep
 
     # ==============================================================================
     # RANGKUMAN LENGKAP HASIL STANDARISASI LABORATORIUM
