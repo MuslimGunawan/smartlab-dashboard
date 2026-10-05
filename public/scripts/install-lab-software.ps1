@@ -2,7 +2,7 @@
 # SCRIPT OTOMASI INSTALASI SOFTWARE LABORATORIUM TEKNIK INFORMATIKA
 # UNIVERSITAS MALIKUSSALEH (UNIMAL)
 # ==============================================================================
-# Standarisasi 17 Software Praktikum Resmi Lab TI Unimal:
+# Standarisasi 19 Software Praktikum Resmi Lab TI Unimal:
 #
 # A. APLIKASI BERLISENSI (4):
 #   1. Delphi (Embarcadero Delphi / RAD Studio) -> Mode Interaktif (Pihak Ketiga)
@@ -10,25 +10,27 @@
 #   3. Microsoft Visual Studio 2022 Community
 #   4. Proteus Design Suite (Labcenter Electronics) -> Mode Interaktif (Pihak Ketiga)
 #
-# B. APLIKASI BEBAS LISENSI & DEV STACK (13):
-#   5. Visual Studio Code
-#   6. Android Studio
-#   7. Python 3.12 (with PIP & System PATH)
-#   8. Java JDK 17 LTS (with JAVA_HOME & System PATH)
-#   9. Node.js LTS (with NPM & Global PATH)
-#  10. Flutter SDK (All Doctor Checks Passed & Auto-Configured)
-#  11. Composer & Laravel Setup
-#  12. Oracle VM VirtualBox
-#  13. Apache NetBeans IDE
-#  14. QGIS Desktop
-#  15. Arduino IDE (Arduino Uno & IoT)
-#  16. Laragon (WAMP Stack)
-#  17. XAMPP Server (Port Anti-Bentrok)
+# B. APLIKASI EKSTRAKSI, DEV STACK & BEBAS LISENSI (15):
+#   5. 7-Zip (High-Speed Archive Extractor)
+#   6. WinRAR (Lab Archive Support .rar/.zip)
+#   7. Visual Studio Code
+#   8. Android Studio
+#   9. Python 3.12 (with PIP & System PATH)
+#  10. Java JDK 17 LTS (with JAVA_HOME & System PATH)
+#  11. Node.js LTS (with NPM & Global PATH)
+#  12. Flutter SDK (All Doctor Checks Passed & Auto-Configured)
+#  13. Composer & Laravel Setup
+#  14. Oracle VM VirtualBox
+#  15. Apache NetBeans IDE
+#  16. QGIS Desktop
+#  17. Arduino IDE (Arduino Uno & IoT)
+#  18. Laragon (WAMP Stack + Safe Modul)
+#  19. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.0"
+$SCRIPT_CURRENT_VERSION = "3.3.5"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$Host.UI.RawUI.WindowTitle = "Installer Otomatis 17 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
+$Host.UI.RawUI.WindowTitle = "Installer Otomatis 19 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
 # 1. Pastikan script berjalan sebagai Administrator
 function Test-Administrator {
@@ -41,13 +43,13 @@ if (-not (Test-Administrator)) {
     try {
         $spPath = $PSCommandPath
         if (-not $spPath) { $spPath = $MyInvocation.MyCommand.Path }
-        Start-Process powershell.exe -ArgumentList ("-NoProfile -ExecutionPolicy Bypass -File `"{0}`"" -f $spPath) -Verb RunAs -ErrorAction Stop
+        Start-Process powershell.exe -ArgumentList ("-NoProfile -ExecutionPolicy Bypass -NoExit -File `"{0}`"" -f $spPath) -Verb RunAs -ErrorAction Stop
         exit
     } catch {
-        Write-Host "[!] Gagal membuka jendela Administrator otomatis: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host "    Silakan klik kanan 'jalankan-instalasi.bat' lalu pilih 'Run as administrator'." -ForegroundColor Cyan
-        Read-Host "`nTekan Enter untuk keluar..."
-        exit 1
+        $errElevate = $_.Exception.Message
+        Write-Host "[!] Elevasi Administrator otomatis tidak dapat dibuka ($errElevate)." -ForegroundColor Yellow
+        Write-Host "    Melanjutkan eksekusi pada sesi pengguna saat ini..." -ForegroundColor Cyan
+        Start-Sleep -Seconds 1
     }
 }
 
@@ -330,6 +332,61 @@ function Create-AppShortcut {
     } catch {}
 }
 
+# 4.2.1. Helper Ekstraksi Otomatis Arsip (ZIP, RAR, 7Z) dengan Multi-Extractor
+function Expand-LabArchive {
+    param (
+        [string]$ArchivePath,
+        [string]$DestinationDir
+    )
+    if (-not (Test-Path $ArchivePath)) { return $false }
+    if (-not (Test-Path $DestinationDir)) { New-Item -ItemType Directory -Path $DestinationDir -Force | Out-Null }
+
+    $sevenZip = "C:\Program Files\7-Zip\7z.exe"
+    $sevenZipX86 = "C:\Program Files (x86)\7-Zip\7z.exe"
+    $winRar = "C:\Program Files\WinRAR\WinRAR.exe"
+    $tarCmd = Get-Command tar.exe -ErrorAction SilentlyContinue
+
+    $archiveName = Split-Path -Leaf $ArchivePath
+    Write-Host "   [i] Mengekstrak arsip instalasi: $archiveName ..." -ForegroundColor Yellow
+
+    # Prioritas 1: 7-Zip (64-bit / 32-bit)
+    if (Test-Path $sevenZip) {
+        $p = Start-Process -FilePath $sevenZip -ArgumentList "x `"$ArchivePath`" `"-o$DestinationDir`" -y" -Wait -PassThru -NoNewWindow
+        if ($p.ExitCode -eq 0) { return $true }
+    }
+    if (Test-Path $sevenZipX86) {
+        $p = Start-Process -FilePath $sevenZipX86 -ArgumentList "x `"$ArchivePath`" `"-o$DestinationDir`" -y" -Wait -PassThru -NoNewWindow
+        if ($p.ExitCode -eq 0) { return $true }
+    }
+
+    # Prioritas 2: WinRAR
+    if (Test-Path $winRar) {
+        $p = Start-Process -FilePath $winRar -ArgumentList "x -ibck -inul -y `"$ArchivePath`" `"$DestinationDir\`"" -Wait -PassThru -NoNewWindow
+        if ($p.ExitCode -eq 0) { return $true }
+    }
+
+    # Prioritas 3: Windows bsdtar (built-in libarchive mendukung RAR/ZIP/TAR/GZ)
+    if ($tarCmd) {
+        $p = Start-Process -FilePath $tarCmd.Source -ArgumentList "-xf `"$ArchivePath`" -C `"$DestinationDir`"" -Wait -PassThru -NoNewWindow
+        if ($p.ExitCode -eq 0) { return $true }
+    }
+
+    # Prioritas 4: PowerShell Expand-Archive (khusus file .zip)
+    if ($ArchivePath -match '\.zip$') {
+        $zipSuccess = $false
+        try {
+            Expand-Archive -Path $ArchivePath -DestinationPath $DestinationDir -Force -ErrorAction Stop
+            $zipSuccess = $true
+        } catch {}
+        if ($zipSuccess) { return $true }
+    }
+
+    Write-Host "   [!] Tidak ditemukan ekstraktor yang cocok untuk format arsip $archiveName." -ForegroundColor Yellow
+    return $false
+}
+
+$script:LastDownloadedFile = ""
+
 # 4.3. High-Speed Multi-Mirror Downloader dengan Visual Live Progress & Google Drive Direct Support
 function Download-FileWithFastMirrors {
     param (
@@ -345,6 +402,7 @@ function Download-FileWithFastMirrors {
     if (-not (Test-Path $parentDir)) { New-Item -ItemType Directory -Path $parentDir -Force | Out-Null }
 
     $cookieJar = New-Object System.Net.CookieContainer
+    $downloadSuccess = $false
 
     foreach ($url in $urlList) {
         if ([string]::IsNullOrWhiteSpace($url)) { continue }
@@ -353,8 +411,8 @@ function Download-FileWithFastMirrors {
 
         # Normalisasi link Google Drive jika pengguna memberikan URL share/view biasa
         $actualUrl = $url
+        $gdriveId = $null
         if ($url -match 'drive\.google\.com') {
-            $gdriveId = $null
             if ($url -match 'id=([a-zA-Z0-9_-]+)') {
                 $gdriveId = $matches[1]
             } elseif ($url -match '/d/([a-zA-Z0-9_-]+)') {
@@ -368,6 +426,7 @@ function Download-FileWithFastMirrors {
         $targetFile = $null
         $responseStream = $null
         $response = $null
+        $currentDest = $DestinationPath
         try {
             $request = [System.Net.HttpWebRequest]::Create($actualUrl)
             $request.Timeout = 20000
@@ -378,7 +437,7 @@ function Download-FileWithFastMirrors {
 
             # Google Drive Fallback: Tangani halaman konfirmasi "Google Drive can't scan this file for viruses"
             $contentType = $response.ContentType
-            if ($url -match 'drive\.google\.com' -and $contentType -match 'text/html') {
+            if (($url -match 'drive\.google\.com') -and ($contentType -match 'text/html')) {
                 $htmlReader = New-Object System.IO.StreamReader($response.GetResponseStream(), [System.Text.Encoding]::UTF8)
                 $htmlBody = $htmlReader.ReadToEnd()
                 $htmlReader.Close()
@@ -409,10 +468,25 @@ function Download-FileWithFastMirrors {
                 }
             }
 
+            # Deteksi nama file asli dari header Content-Disposition (kritis untuk Google Drive)
+            $contentDisp = $response.Headers["Content-Disposition"]
+            $serverName = $null
+            if ($contentDisp -and ($contentDisp -match 'filename="?([^";]+)"?')) {
+                $serverName = [System.IO.Path]::GetFileName($matches[1].Trim())
+            }
+
+            $currentBase = [System.IO.Path]::GetFileName($currentDest)
+            if (-not [string]::IsNullOrWhiteSpace($serverName)) {
+                $currentDest = Join-Path $parentDir $serverName
+            } elseif (($currentBase -ieq "view") -or (-not ([System.IO.Path]::HasExtension($currentDest)))) {
+                $fallbackSafe = ($ActivityTitle -replace 'Mengunduh\s*', '' -replace '[^a-zA-Z0-9_-]', '_') + ".exe"
+                $currentDest = Join-Path $parentDir $fallbackSafe
+            }
+
             $totalBytes = $response.ContentLength
             $responseStream = $response.GetResponseStream()
 
-            $targetFile = New-Object System.IO.FileStream($DestinationPath, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+            $targetFile = New-Object System.IO.FileStream($currentDest, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
             $buffer = New-Object byte[] 65536
             $downloadedBytes = 0
             $sw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -446,27 +520,30 @@ function Download-FileWithFastMirrors {
             $response.Close()
 
             # Verifikasi jika file yang terunduh bukan error HTML kecil
-            $fInfo = Get-Item $DestinationPath -ErrorAction SilentlyContinue
-            if ($fInfo -and $fInfo.Length -lt 200000 -and $url -match 'drive\.google\.com') {
-                $checkTxt = [System.IO.File]::ReadAllText($DestinationPath)
-                if ($checkTxt -match "<html" -or $checkTxt -match "quota exceeded" -or $checkTxt -match "kuota terlampaui") {
-                    Remove-Item -Path $DestinationPath -Force -ErrorAction SilentlyContinue
+            $fInfo = Get-Item $currentDest -ErrorAction SilentlyContinue
+            if ($fInfo -and ($fInfo.Length -lt 200000) -and ($url -match 'drive\.google\.com')) {
+                $checkTxt = [System.IO.File]::ReadAllText($currentDest)
+                if (($checkTxt -match "<html") -or ($checkTxt -match "quota exceeded") -or ($checkTxt -match "kuota terlampaui")) {
+                    Remove-Item -Path $currentDest -Force -ErrorAction SilentlyContinue
                     Write-Host "      [!] Google Drive mirror ini limit/kuota terlampaui. Berpindah ke mirror berikutnya..." -ForegroundColor DarkYellow
                     continue
                 }
             }
 
-            return $true
+            $script:LastDownloadedFile = $currentDest
+            $downloadSuccess = $true
+            break
         } catch {
             Write-Progress -Activity "$ActivityTitle" -Completed
             if ($targetFile) { $targetFile.Close() }
             if ($responseStream) { $responseStream.Close() }
             if ($response) { $response.Close() }
-            if (Test-Path $DestinationPath) { Remove-Item -Path $DestinationPath -Force -ErrorAction SilentlyContinue }
-            Write-Host "      [!] Server $cleanHost lambat/gagal: $($_.Exception.Message). Mencoba mirror cadangan..." -ForegroundColor DarkYellow
+            if (Test-Path $currentDest) { Remove-Item -Path $currentDest -Force -ErrorAction SilentlyContinue }
+            $errMsg = $_.Exception.Message
+            Write-Host "      [!] Server $cleanHost lambat/gagal: $errMsg. Mencoba mirror cadangan..." -ForegroundColor DarkYellow
         }
     }
-    return $false
+    return $downloadSuccess
 }
 
 # 5. Fungsi Pelacak Status Instalasi & Ringkasan Hasil Otomasi
@@ -541,12 +618,29 @@ function Install-AppSmart {
         if ($offlineFile) {
             Write-Host "[OK] Ditemukan file installer offline: $($offlineFile.Name)" -ForegroundColor Green
             
+            $ext = $offlineFile.Extension.ToLower()
+
+            # Jika file merupakan arsip (ZIP/RAR/7Z), ekstrak terlebih dahulu secara otomatis
+            if ($ext -match "zip|rar|7z") {
+                $extractFolder = Join-Path $AppsDir ($offlineFile.BaseName)
+                $extracted = Expand-LabArchive -ArchivePath $offlineFile.FullName -DestinationDir $extractFolder
+                if ($extracted) {
+                    $innerExe = Get-ChildItem -Path $extractFolder -Filter "*.exe" -File -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "uninstall|remove" } | Select-Object -First 1
+                    $innerMsi = Get-ChildItem -Path $extractFolder -Filter "*.msi" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+                    if ($innerExe) {
+                        $offlineFile = $innerExe
+                        $ext = ".exe"
+                    } elseif ($innerMsi) {
+                        $offlineFile = $innerMsi
+                        $ext = ".msi"
+                    }
+                }
+            }
+
             if ($IsInteractive) {
                 Write-Host "[i] Membuka berkas/installer interaktif: $($offlineFile.Name)" -ForegroundColor Yellow
                 Write-Host "    >>> Silakan ikuti petunjuk setup / aktivasi lisensi lab di layar yang muncul..." -ForegroundColor Cyan
-                $ext = $offlineFile.Extension.ToLower()
                 if ($ext -match "zip|rar|7z") {
-                    # Jika berupa file arsip, buka foldernya di Windows Explorer agar asisten lab dapat mengekstrak/menjalankan setup
                     Start-Process explorer.exe -ArgumentList "/select,`"$($offlineFile.FullName)`""
                 } else {
                     $proc = Start-Process -FilePath $offlineFile.FullName -Wait -PassThru
@@ -556,7 +650,6 @@ function Install-AppSmart {
                 return
             } else {
                 Write-Host "[i] Menjalankan instalasi lokal secara otomatis dari flashdisk..." -ForegroundColor Yellow
-                $ext = $offlineFile.Extension.ToLower()
                 if ($ext -eq ".msi") {
                     $cleanSilent = if ($SilentArgs) { $SilentArgs -replace '(?i)\s*/qn\b', '' -replace '(?i)\s*/quiet\b', '' -replace '(?i)\s*/norestart\b', '' } else { "" }
                     $cleanSilent = $cleanSilent.Trim()
@@ -568,7 +661,7 @@ function Install-AppSmart {
                     $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru
                 } else {
                     $argsList = Convert-ArgsToArray $SilentArgs
-                    if ($argsList.Count -gt 0) {
+                    if ($argsList -and ($argsList.Count -gt 0)) {
                         $proc = Start-Process -FilePath $offlineFile.FullName -ArgumentList $argsList -Wait -PassThru
                     } else {
                         $proc = Start-Process -FilePath $offlineFile.FullName -Wait -PassThru
@@ -587,8 +680,9 @@ function Install-AppSmart {
                     Record-InstallResult -Name $Name -Status "BERHASIL DIINSTAL" -Keterangan "Terpasang dari offline Apps"
                     return
                 } else {
-                    Write-Host "[!] Installer offline selesai dengan kode exit: $($proc.ExitCode)" -ForegroundColor Yellow
-                    Record-InstallResult -Name $Name -Status "GAGAL" -Keterangan "Exit Code: $($proc.ExitCode)"
+                    $ec = $proc.ExitCode
+                    Write-Host "[!] Installer offline selesai dengan kode exit: $ec" -ForegroundColor Yellow
+                    Record-InstallResult -Name $Name -Status "GAGAL" -Keterangan "Exit Code: $ec"
                     return
                 }
             }
@@ -598,20 +692,43 @@ function Install-AppSmart {
     # B. Jika ada DownloadUrls langsung (CDN mirror cepat), unduh dan simpan ke folder Apps/
     if ($DownloadUrls) {
         $urlsArr = @($DownloadUrls)
-        if ($urlsArr.Count -gt 0) {
+        if ($urlsArr -and ($urlsArr.Count -gt 0)) {
             $firstUrl = $urlsArr[0]
             $destName = [System.IO.Path]::GetFileName(($firstUrl -split '\?')[0])
-            if ([string]::IsNullOrWhiteSpace($destName) -or $destName.IndexOfAny([System.IO.Path]::GetInvalidFileNameChars()) -ge 0) {
-                $destName = "$($Name -replace '\s+', '_').exe"
+            if ([string]::IsNullOrWhiteSpace($destName) -or ($destName.IndexOfAny([System.IO.Path]::GetInvalidFileNameChars()) -ge 0) -or ($destName -ieq "view") -or (-not ([System.IO.Path]::HasExtension($destName)))) {
+                $destName = "$($Name -replace '[^a-zA-Z0-9_-]', '_').exe"
             }
             $destFile = Join-Path $AppsDir $destName
             Write-Host "[i] Mengunduh installer $Name via High-Speed CDN Mirror..." -ForegroundColor Yellow
             $downloaded = Download-FileWithFastMirrors -Urls $urlsArr -DestinationPath $destFile -ActivityTitle "Mengunduh $Name"
 
+            if ($downloaded -and (-not [string]::IsNullOrWhiteSpace($script:LastDownloadedFile)) -and (Test-Path $script:LastDownloadedFile)) {
+                $destFile = $script:LastDownloadedFile
+            }
+
             if ($downloaded -and (Test-Path $destFile)) {
-                Write-Host "[OK] Installer $Name berhasil diunduh dan disimpan ke folder Apps/ ($destName)!" -ForegroundColor Green
+                $savedLeaf = Split-Path -Leaf $destFile
+                Write-Host "[OK] Installer $Name berhasil diunduh dan disimpan ke folder Apps/ ($savedLeaf)!" -ForegroundColor Green
 
                 $ext = [System.IO.Path]::GetExtension($destFile).ToLower()
+
+                # Jika unduhan berupa file arsip (ZIP/RAR/7Z), ekstrak secara otomatis
+                if ($ext -match "zip|rar|7z") {
+                    $extractFolder = Join-Path $AppsDir ([System.IO.Path]::GetFileNameWithoutExtension($destFile))
+                    $extracted = Expand-LabArchive -ArchivePath $destFile -DestinationDir $extractFolder
+                    if ($extracted) {
+                        $innerExe = Get-ChildItem -Path $extractFolder -Filter "*.exe" -File -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "uninstall|remove" } | Select-Object -First 1
+                        $innerMsi = Get-ChildItem -Path $extractFolder -Filter "*.msi" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+                        if ($innerExe) {
+                            $destFile = $innerExe.FullName
+                            $ext = ".exe"
+                        } elseif ($innerMsi) {
+                            $destFile = $innerMsi.FullName
+                            $ext = ".msi"
+                        }
+                    }
+                }
+
                 if ($ext -eq ".msi") {
                     $cleanSilent = if ($SilentArgs) { $SilentArgs -replace '(?i)\s*/qn\b', '' -replace '(?i)\s*/quiet\b', '' -replace '(?i)\s*/norestart\b', '' } else { "" }
                     $cleanSilent = $cleanSilent.Trim()
@@ -623,7 +740,7 @@ function Install-AppSmart {
                     $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru
                 } else {
                     $argsList = Convert-ArgsToArray $SilentArgs
-                    if ($argsList.Count -gt 0) {
+                    if ($argsList -and ($argsList.Count -gt 0)) {
                         $proc = Start-Process -FilePath $destFile -ArgumentList $argsList -Wait -PassThru
                     } else {
                         $proc = Start-Process -FilePath $destFile -Wait -PassThru
@@ -649,6 +766,7 @@ function Install-AppSmart {
     # C. Jika tidak ada file offline di folder Apps, unduh & simpan ke Apps/ via Winget, lalu instal
     if (-not [string]::IsNullOrWhiteSpace($WingetId)) {
         Write-Host "[i] File offline belum ada di folder Apps. Mengunduh & menyimpan installer ke Apps/..." -ForegroundColor Yellow
+        $wingetDownloadedSuccess = $false
         try {
             winget download --id "$WingetId" --source winget -d "$AppsDir" --accept-package-agreements --accept-source-agreements --disable-interactivity
             
@@ -682,7 +800,7 @@ function Install-AppSmart {
                     $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru
                 } else {
                     $argsList = Convert-ArgsToArray $SilentArgs
-                    if ($argsList.Count -gt 0) {
+                    if ($argsList -and ($argsList.Count -gt 0)) {
                         $proc = Start-Process -FilePath $newOfflineFile.FullName -ArgumentList $argsList -Wait -PassThru
                     } else {
                         $proc = Start-Process -FilePath $newOfflineFile.FullName -Wait -PassThru
@@ -697,12 +815,13 @@ function Install-AppSmart {
                         }
                     }
                     Record-InstallResult -Name $Name -Status "BERHASIL DIINSTAL" -Keterangan "Terunduh & terpasang via Winget"
-                    return
+                    $wingetDownloadedSuccess = $true
                 }
             }
         } catch {
             Write-Host "[!] Unduhan installer offline gagal, mencoba direct install..." -ForegroundColor Yellow
         }
+        if ($wingetDownloadedSuccess) { return }
 
         # Fallback langsung install via Winget jika download bundle belum menyelesaikan install
         $installed = winget list --id "$WingetId" --source winget 2>$null
@@ -726,6 +845,46 @@ function Install-AppSmart {
         Write-Host "[!] File installer offline $Name ($FilePattern) belum ada di folder Apps/." -ForegroundColor Yellow
         Write-Host "    (Silakan salin installer pihak ketiga $Name ke folder Apps dan jalankan kembali)." -ForegroundColor Gray
         Record-InstallResult -Name $Name -Status "BELUM TERSEDIA" -Keterangan "Menunggu file master di Apps/"
+    }
+}
+
+# 5.1. Fungsi Setup 7-Zip (High-Speed Multi-Format Archive Extractor)
+function Setup-7Zip {
+    $sevenZipMirrors = @(
+        "https://www.7-zip.org/a/7z2408-x64.exe",
+        "https://github.com/ip7z/7zip/releases/download/24.08/7z2408-x64.exe"
+    )
+    Install-AppSmart -Name "7-Zip" `
+                     -FilePattern @("*7z*x64*.exe", "*7z*.exe", "*7-zip*.exe", "*7z*.msi") `
+                     -DownloadUrls $sevenZipMirrors `
+                     -SilentArgs "/S" `
+                     -WingetId "7zip.7zip" `
+                     -CheckPath @("C:\Program Files\7-Zip\7z.exe", "C:\Program Files (x86)\7-Zip\7z.exe")
+
+    $sevenZipPath = "C:\Program Files\7-Zip"
+    if (Test-Path $sevenZipPath) {
+        Add-ToSystemPath -DirToAdd $sevenZipPath
+        if ($env:Path -notlike "*$sevenZipPath*") { $env:Path = "$sevenZipPath;" + $env:Path }
+    }
+}
+
+# 5.2. Fungsi Setup WinRAR (Lab Archive Support .rar/.zip)
+function Setup-WinRAR {
+    $winRarMirrors = @(
+        "https://www.rarlab.com/rar/winrar-x64-701.exe",
+        "https://www.rarlab.com/rar/winrar-x64-700.exe"
+    )
+    Install-AppSmart -Name "WinRAR" `
+                     -FilePattern @("*winrar*x64*.exe", "*winrar*.exe", "*wrar*.exe") `
+                     -DownloadUrls $winRarMirrors `
+                     -SilentArgs "/s" `
+                     -WingetId "RARLab.WinRAR" `
+                     -CheckPath @("C:\Program Files\WinRAR\WinRAR.exe", "C:\Program Files (x86)\WinRAR\WinRAR.exe")
+
+    $winRarPath = "C:\Program Files\WinRAR"
+    if (Test-Path $winRarPath) {
+        Add-ToSystemPath -DirToAdd $winRarPath
+        if ($env:Path -notlike "*$winRarPath*") { $env:Path = "$winRarPath;" + $env:Path }
     }
 }
 
@@ -794,33 +953,47 @@ function Setup-LaragonStack {
     $targetLaragon = "C:\laragon"
     $laragonExe = Join-Path $targetLaragon "laragon.exe"
 
+    # Multi-Mirror Google Drive resmi untuk paket master Laragon_Custom_Stack.rar (Auto-Fallback kuota)
+    $laragonCustomMirrors = @(
+        "https://drive.google.com/file/d/1nn1aUQm1FiVlFRy-pIerSxCkK1I7MtJ_/view?usp=sharing",
+        "https://drive.google.com/file/d/14IyGfCdk3VOw-MWYXqA2SkP2S9jq1hBC/view?usp=sharing",
+        "https://drive.google.com/file/d/1Eunm6q6ir8yx0F9ybTPU4dfaOn33fkUt/view?usp=sharing",
+        "https://drive.google.com/file/d/1majSE8h7bR_tRFFz2euHBP3-CNtzigP6/view?usp=sharing"
+    )
+
     if (Test-Path $laragonExe) {
         Write-Host "   [OK SUDAH TERPASANG] Laragon terdeteksi di $laragonExe." -ForegroundColor Green
-        Write-Host "   -> Melewati proses instalasi dasar Laragon." -ForegroundColor DarkGray
     } else {
-        # 1. Cari file installer offline Laragon di AppsDir (Pencarian Rekursif)
-        $laragonInstaller = Get-ChildItem -Path $AppsDir -Filter "*laragon*.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        # 1. Cari file installer offline Laragon di AppsDir (KECUALIKAN file binary laragon.exe)
+        $laragonInstaller = Get-ChildItem -Path $AppsDir -Filter "*laragon*.exe" -File -Recurse -ErrorAction SilentlyContinue | Where-Object {
+            $_.Name -ine "laragon.exe" -and $_.Name -notmatch "unins" -and $_.FullName -notmatch 'bin|usr|etc|Custom_Stack'
+        } | Select-Object -First 1
 
         if (-not $laragonInstaller) {
-            Write-Host "   [i] File offline Laragon belum ada di Apps. Mengunduh installer resmi..." -ForegroundColor Yellow
-            
-            # Coba unduh langsung dari GitHub Releases CDN resmi (sangat cepat & stabil)
-            try {
-                $downUrl = "https://github.com/leokhoa/laragon/releases/download/6.0.0/laragon-wamp.exe"
-                $destExe = Join-Path $AppsDir "laragon-wamp-setup-6.0.0.exe"
-                Write-Host "   [i] Mengunduh Laragon WAMP dari GitHub CDN..." -ForegroundColor Yellow
-                [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-                $wc = New-Object System.Net.WebClient
-                $wc.DownloadFile($downUrl, $destExe)
-                $wc.Dispose()
+            $laragonInstaller = Get-ChildItem -Path $AppsDir -Filter "*wamp*.exe" -File -Recurse -ErrorAction SilentlyContinue | Where-Object {
+                $_.Name -notmatch "unins"
+            } | Select-Object -First 1
+        }
+
+        if (-not $laragonInstaller) {
+            Write-Host "   [i] File offline Laragon belum ada di Apps. Mengunduh installer resmi 6.0.0..." -ForegroundColor Yellow
+            $laragonBaseUrls = @(
+                "https://github.com/leokhoa/laragon/releases/download/6.0.0/laragon-wamp.exe",
+                "https://downloads.sourceforge.net/project/laragon/laragon-wamp.exe"
+            )
+            $destExe = Join-Path $AppsDir "laragon-wamp-setup-6.0.0.exe"
+            $dlBase = Download-FileWithFastMirrors -Urls $laragonBaseUrls -DestinationPath $destExe -ActivityTitle "Mengunduh Laragon WAMP"
+            if ($dlBase -and (Test-Path $destExe)) {
                 $laragonInstaller = Get-Item $destExe -ErrorAction SilentlyContinue
                 Write-Host "   [OK] Installer Laragon berhasil diunduh dan disimpan di folder Apps/!" -ForegroundColor Green
-            } catch {}
+            }
 
             if (-not $laragonInstaller) {
                 try {
                     winget download --id "LeNgocKhoa.Laragon" --source winget -d "$AppsDir" --accept-package-agreements --accept-source-agreements --disable-interactivity
-                    $laragonInstaller = Get-ChildItem -Path $AppsDir -Filter "*laragon*.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+                    $laragonInstaller = Get-ChildItem -Path $AppsDir -Filter "*laragon*.exe" -File -Recurse -ErrorAction SilentlyContinue | Where-Object {
+                        $_.Name -ine "laragon.exe" -and $_.Name -notmatch "unins"
+                    } | Select-Object -First 1
                 } catch {}
             }
         }
@@ -833,87 +1006,128 @@ function Setup-LaragonStack {
             Get-Process -Name "laragon", "httpd", "mysqld" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
             Start-Sleep -Milliseconds 500
 
-            # Argumen Inno Setup standar (Universal & Bebas Error /VERYSILENT)
-            $laragonArgs = @("/VERYSILENT", "/NORESTART", "/SP-", "/SUPPRESSMSGBOXES", "/DIR=C:\laragon")
-            $p = Start-Process -FilePath $laragonInstaller.FullName -ArgumentList $laragonArgs -PassThru
-
-            # Watchdog loop: Laragon Inno Setup terkadang menjalankan laragon.exe dengan argumen setup di akhir instalasi,
-            # memicu dialog warning "Laragon: '/VERYSILENT' is not a Laragon command."
-            # Kita pantau proses laragon.exe, dan jika muncul segera terminate agar tidak memblok instalasi!
-            $timeoutCount = 0
-            while (-not $p.HasExited -and $timeoutCount -lt 180) {
-                Start-Sleep -Seconds 1
-                $timeoutCount++
-                $runningLaragon = Get-Process -Name "laragon" -ErrorAction SilentlyContinue
-                if ($runningLaragon) {
-                    Start-Sleep -Milliseconds 1500
-                    $runningLaragon | Stop-Process -Force -ErrorAction SilentlyContinue
+            # Background Watchdog: Cegah modal popup laragon.exe (/VERYSILENT atau /DIR) memblok instalasi
+            $killJob = Start-Job -ScriptBlock {
+                for ($i = 0; $i -lt 150; $i++) {
+                    Get-Process -Name "laragon" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+                    Start-Sleep -Milliseconds 250
                 }
             }
 
-            # Pembersihan akhir proses laragon jika masih tertinggal
+            $laragonArgs = @("/VERYSILENT", "/NORESTART", "/SP-", "/SUPPRESSMSGBOXES", "/DIR=C:\laragon")
+            $p = Start-Process -FilePath $laragonInstaller.FullName -ArgumentList $laragonArgs -Wait -PassThru
+
+            Stop-Job $killJob -Force -ErrorAction SilentlyContinue
+            Remove-Job $killJob -Force -ErrorAction SilentlyContinue
             Get-Process -Name "laragon" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
         } else {
-            # Fallback winget install langsung jika file installer tidak ditemukan
             Write-Host "   [i] Mencoba direct install Laragon via Winget..." -ForegroundColor Yellow
             $cmd = "winget install --id `"LeNgocKhoa.Laragon`" --source winget -e --silent --accept-source-agreements --accept-package-agreements --disable-interactivity"
             Invoke-Expression $cmd
             Get-Process -Name "laragon" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
         }
+    }
 
-        # Verifikasi fisik keberadaan laragon.exe di disk
-        if (-not (Test-Path $laragonExe)) {
-            Write-Host "   [!] File laragon.exe belum ditemukan di $targetLaragon setelah proses silent." -ForegroundColor Yellow
-            Write-Host "   [i] Menjalankan installer Laragon langsung untuk memastikan ekstraksi berkas selesai..." -ForegroundColor Yellow
-            if ($laragonInstaller) {
-                Start-Process -FilePath $laragonInstaller.FullName -ArgumentList "/DIR=C:\laragon /SUPPRESSMSGBOXES" -Wait
-            } else {
-                winget install --id "LeNgocKhoa.Laragon" --source winget -e --accept-package-agreements --accept-source-agreements --disable-interactivity
+    # 2. Pastikan Shortcut & Windows Search SELALU Terdaftar (Muncul di Menu Start, Desktop & Run)
+    if (Test-Path $laragonExe) {
+        Write-Host "   [OK] Memverifikasi shortcut & integrasi Windows Search untuk Laragon..." -ForegroundColor Green
+        Create-AppShortcut -TargetExe $laragonExe -ShortcutName "Laragon" -WorkingDir "C:\laragon"
+
+        $startMenuFolders = @(
+            [Environment]::GetFolderPath("CommonPrograms"),
+            [Environment]::GetFolderPath("Programs"),
+            "C:\ProgramData\Microsoft\Windows\Start Menu\Programs",
+            "$env:APPDATA\Microsoft\Windows\Start Menu\Programs"
+        )
+        $wsh = New-Object -ComObject WScript.Shell
+        foreach ($sm in $startMenuFolders) {
+            if (Test-Path $sm) {
+                $lnk = Join-Path $sm "Laragon.lnk"
+                $sc = $wsh.CreateShortcut($lnk)
+                $sc.TargetPath = $laragonExe
+                $sc.WorkingDirectory = "C:\laragon"
+                $sc.IconLocation = "$laragonExe,0"
+                $sc.Save()
             }
-            Get-Process -Name "laragon" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        }
+        try {
+            $regKeys = @(
+                "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\laragon.exe",
+                "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\laragon.exe"
+            )
+            foreach ($rk in $regKeys) {
+                if (-not (Test-Path $rk)) { New-Item -Path $rk -Force | Out-Null }
+                Set-ItemProperty -Path $rk -Name "(Default)" -Value $laragonExe -Force
+                Set-ItemProperty -Path $rk -Name "Path" -Value "C:\laragon" -Force
+            }
+        } catch {}
+        Add-ToSystemPath -DirToAdd "C:\laragon"
+    }
+
+    # 3. PERSIAPAN & EKSTRAKSI LARAGON CUSTOM STACK (Google Drive Multi-Mirror + Auto-Extract)
+    $customStackDir = Join-Path $AppsDir "Laragon_Custom_Stack"
+    $hasExtracted = (Test-Path (Join-Path $customStackDir "bin"))
+
+    if (-not $hasExtracted) {
+        Write-Host "`n   [i] Memeriksa paket Laragon Custom Stack (PHP terbaru, MySQL, phpMyAdmin)..." -ForegroundColor Yellow
+
+        # Cari arsip lokal di AppsDir
+        $customRar = Get-ChildItem -Path $AppsDir -Filter "*Custom*Stack*.rar" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $customRar) {
+            $customRar = Get-ChildItem -Path $AppsDir -Filter "*Laragon*Custom*.rar" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        }
+        if (-not $customRar) {
+            $customRar = Get-ChildItem -Path $AppsDir -Filter "*Custom*Stack*.zip" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
         }
 
-        if (Test-Path $laragonExe) {
-            Write-Host "   [OK] Berhasil menginstal Laragon resmi di $targetLaragon!" -ForegroundColor Green
-            Create-AppShortcut -TargetExe $laragonExe -ShortcutName "Laragon" -WorkingDir "C:\laragon"
-            try {
-                $regKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\laragon.exe"
-                if (-not (Test-Path $regKey)) { New-Item -Path $regKey -Force | Out-Null }
-                Set-ItemProperty -Path $regKey -Name "(Default)" -Value $laragonExe -Force
-                Set-ItemProperty -Path $regKey -Name "Path" -Value "C:\laragon" -Force
-                Write-Host "   [OK] Shortcut Start Menu, Desktop & App Paths Laragon siap!" -ForegroundColor Green
-            } catch {}
-        } else {
-            Write-Host "   [!] Peringatan: File $laragonExe belum terbentuk di disk. Pastikan installer tidak diblokir Windows Defender." -ForegroundColor Red
+        # Jika belum ada arsip di flashdisk, unduh dari Google Drive Multi-Mirror
+        if (-not $customRar) {
+            Write-Host "   [i] Master Laragon_Custom_Stack.rar belum ada di flashdisk." -ForegroundColor Yellow
+            Write-Host "   [>>>] Mengunduh Laragon_Custom_Stack.rar dari Google Drive Multi-Mirror..." -ForegroundColor Cyan
+            $destRar = Join-Path $AppsDir "Laragon_Custom_Stack.rar"
+            $dlSuccess = Download-FileWithFastMirrors -Urls $laragonCustomMirrors -DestinationPath $destRar -ActivityTitle "Mengunduh Laragon Custom Stack"
+            if ($dlSuccess -and (Test-Path $destRar)) {
+                $customRar = Get-Item $destRar -ErrorAction SilentlyContinue
+            }
+        }
+
+        # Ekstrak arsip ke folder Apps\Laragon_Custom_Stack
+        if ($customRar) {
+            Write-Host "   [OK] Ditemukan arsip Custom Stack: $($customRar.Name)" -ForegroundColor Green
+            Write-Host "   [i] Mengekstrak paket Custom Stack ke $customStackDir..." -ForegroundColor Yellow
+            $null = Expand-LabArchive -ArchivePath $customRar.FullName -DestinationDir $customStackDir
         }
     }
 
-    # 2. Periksa apakah paket custom stack (bin, phpMyAdmin, config) ada di folder Apps
-    $customStackDir = Join-Path $AppsDir "Laragon_Custom_Stack"
-    if (Test-Path $customStackDir) {
-        Write-Host "`n[i] Menerapkan paket modul custom Laragon (PHP, MySQL, Node.js, Python, phpMyAdmin)..." -ForegroundColor Yellow
+    # 4. Terapkan / Timpa modul Custom Stack ke C:\laragon
+    $effectiveStackDir = $customStackDir
+    if (-not (Test-Path (Join-Path $effectiveStackDir "bin")) -and (Test-Path (Join-Path $customStackDir "Laragon_Custom_Stack\bin"))) {
+        $effectiveStackDir = Join-Path $customStackDir "Laragon_Custom_Stack"
+    }
 
-        $targetLaragon = "C:\laragon"
+    if (Test-Path (Join-Path $effectiveStackDir "bin")) {
+        Write-Host "`n   [i] Menerapkan paket modul custom Laragon (PHP, MySQL, Node.js, Python, phpMyAdmin)..." -ForegroundColor Yellow
+
         if (-not (Test-Path $targetLaragon)) {
             New-Item -ItemType Directory -Path $targetLaragon -Force | Out-Null
         }
 
-        # Salin / Timpa modul bin (PHP 8.3/8.4/8.5, MySQL, Node, Python, Redis, dll.)
-        $srcBin = Join-Path $customStackDir "bin"
+        # Salin / Timpa modul bin (PHP 8.2/8.3/8.4, MySQL, Node, Python, Redis, dll.)
+        $srcBin = Join-Path $effectiveStackDir "bin"
         if (Test-Path $srcBin) {
             Write-Host "   -> Menyinkronkan direktori C:\laragon\bin..." -ForegroundColor Cyan
             & robocopy $srcBin "$targetLaragon\bin" /E /R:1 /W:1 /NP /NFL /NDL | Out-Null
         }
 
-        # Salin / Timpa etc\apps\phpMyAdmin
-        $srcPma = Join-Path $customStackDir "etc\apps\phpMyAdmin"
-        if (Test-Path $srcPma) {
-            Write-Host "   -> Menyinkronkan phpMyAdmin ke C:\laragon\etc\apps\phpMyAdmin..." -ForegroundColor Cyan
-            & robocopy $srcPma "$targetLaragon\etc\apps\phpMyAdmin" /E /R:1 /W:1 /NP /NFL /NDL | Out-Null
+        # Salin / Timpa etc
+        $srcEtc = Join-Path $effectiveStackDir "etc"
+        if (Test-Path $srcEtc) {
+            Write-Host "   -> Menyinkronkan direktori C:\laragon\etc (phpMyAdmin, dll)..." -ForegroundColor Cyan
+            & robocopy $srcEtc "$targetLaragon\etc" /E /R:1 /W:1 /NP /NFL /NDL | Out-Null
         }
 
         # Salin konfigurasi laragon.ini pilihan versi
-        $srcIni = Join-Path $customStackDir "usr\laragon.ini"
+        $srcIni = Join-Path $effectiveStackDir "usr\laragon.ini"
         if (Test-Path $srcIni) {
             $destUsr = Join-Path $targetLaragon "usr"
             if (-not (Test-Path $destUsr)) { New-Item -ItemType Directory -Path $destUsr -Force | Out-Null }
@@ -923,6 +1137,158 @@ function Setup-LaragonStack {
 
         Write-Host "   [OK] Berhasil menerapkan seluruh custom stack Laragon (Data & Web www tetap aman)!" -ForegroundColor Green
     }
+
+    # 5. DETEKSI PHP TERBARU & OPTIMASI LENGKAP SEMUA php.ini AGAR COMPOSER & LARAVEL BEBAS ERROR
+    Write-Host "`n   [i] Mengonfigurasi seluruh php.ini dan mengaktifkan ekstensi lengkap (bebas warning/error)..." -ForegroundColor Yellow
+    
+    # Cari PHP versi terbaru di C:\laragon\bin\php
+    $newestPhpDir = Get-ChildItem -Path "$targetLaragon\bin\php" -Directory -ErrorAction SilentlyContinue |
+                    Where-Object { Test-Path (Join-Path $_.FullName "php.exe") } |
+                    Sort-Object Name -Descending | Select-Object -First 1
+
+    if ($newestPhpDir) {
+        Write-Host "   [OK] PHP Terbaru Terdeteksi: $($newestPhpDir.Name)" -ForegroundColor Green
+        
+        # Update laragon.ini agar otomatis memilih PHP terbaru ini
+        $usrLaragonIni = Join-Path $targetLaragon "usr\laragon.ini"
+        if (Test-Path $usrLaragonIni) {
+            try {
+                $iniTxt = [System.IO.File]::ReadAllText($usrLaragonIni)
+                if ($iniTxt -match '(?m)^Version=.*$') {
+                    $newIniTxt = $iniTxt -replace '(?m)^Version=.*$', "Version=$($newestPhpDir.Name)"
+                    [System.IO.File]::WriteAllText($usrLaragonIni, $newIniTxt)
+                }
+            } catch {}
+        }
+    }
+
+    $phpInis = Get-ChildItem -Path "$targetLaragon\bin\php" -Filter "php.ini" -Recurse -File -ErrorAction SilentlyContinue
+    foreach ($pIni in $phpInis) {
+        try {
+            $iniText = [System.IO.File]::ReadAllText($pIni.FullName)
+            $phpFolder = $pIni.Directory.FullName
+            $extDir = Join-Path $phpFolder "ext"
+            
+            # Cek ketersediaan file dll spesifik di folder ext masing-masing PHP
+            $hasZipDll = (Test-Path (Join-Path $extDir "php_zip.dll")) -or (Test-Path (Join-Path $extDir "zip.dll"))
+            if ($hasZipDll) {
+                $iniText = $iniText -replace '(?m)^;\s*extension\s*=\s*zip\b', 'extension=zip'
+                $iniText = $iniText -replace '(?m)^;\s*extension\s*=\s*php_zip\.dll\b', 'extension=php_zip.dll'
+                if ($iniText -notmatch '(?m)^extension\s*=\s*(zip|php_zip\.dll)\b') { $iniText += "`r`nextension=zip`r`n" }
+            } else {
+                $iniText = $iniText -replace '(?m)^\s*extension\s*=\s*php_zip\.dll\b', ';extension=php_zip.dll'
+                $iniText = $iniText -replace '(?m)^\s*extension\s*=\s*zip\b', ';extension=zip'
+            }
+
+            # Daftar ekstensi wajib untuk Composer, Laravel 11/12, & praktikum web modern
+            $extList = @("curl", "fileinfo", "openssl", "pdo_mysql", "mysqli", "mbstring", "gd", "intl", "exif", "bcmath", "sodium")
+            foreach ($ext in $extList) {
+                $hasExtDll = (Test-Path (Join-Path $extDir "php_$ext.dll")) -or (Test-Path (Join-Path $extDir "$ext.dll"))
+                if ($hasExtDll -or -not (Test-Path $extDir)) {
+                    $iniText = $iniText -replace "(?m)^;\s*extension\s*=\s*$ext\b", "extension=$ext"
+                    if ($iniText -notmatch "(?m)^extension\s*=\s*$ext\b") { $iniText += "`r`nextension=$ext`r`n" }
+                }
+            }
+
+            # Normalkan extension_dir ke absolute path
+            if (Test-Path $extDir) {
+                $escapedExt = $extDir.Replace('\', '/')
+                $iniText = $iniText -replace '(?m)^\s*;?\s*extension_dir\s*=\s*"ext"', "extension_dir = `"$escapedExt`""
+                $iniText = $iniText -replace '(?m)^\s*;?\s*extension_dir\s*=\s*''ext''', "extension_dir = `"$escapedExt`""
+            }
+
+            # Tingkatkan limit memory, upload, dan max execution time untuk Composer & Laravel
+            $iniText = $iniText -replace '(?m)^\s*memory_limit\s*=.*$', 'memory_limit = 512M'
+            $iniText = $iniText -replace '(?m)^\s*upload_max_filesize\s*=.*$', 'upload_max_filesize = 128M'
+            $iniText = $iniText -replace '(?m)^\s*post_max_size\s*=.*$', 'post_max_size = 128M'
+            $iniText = $iniText -replace '(?m)^\s*max_execution_time\s*=.*$', 'max_execution_time = 360'
+
+            [System.IO.File]::WriteAllText($pIni.FullName, $iniText)
+        } catch {}
+    }
+    Write-Host "   [OK] Seluruh php.ini berhasil dikonfigurasi & ekstensi aktif sempurna!" -ForegroundColor Green
+
+    # Kunci & Satukan seluruh ekosistem PHP ke versi terbaru dari Laragon
+    Sync-UnifiedLaragonPhp
+
+    Record-InstallResult -Name "Laragon" -Status "BERHASIL DIINSTAL" -Keterangan "Laragon + Custom Stack Siap"
+}
+
+# 8.1 Fungsi Khusus Menyatukan Seluruh Ekosistem PHP ke Versi Terbaru Laragon
+function Sync-UnifiedLaragonPhp {
+    Write-Host "`n   [>>>] Menyatukan seluruh ekosistem PHP ke versi terbaru Laragon (C:\laragon\bin\php)..." -ForegroundColor Cyan
+    
+    # 1. Cari PHP versi terbaru di C:\laragon\bin\php (otomatis urutkan dari 8.5/8.4/8.3 dst)
+    $laragonPhps = Get-ChildItem -Path "C:\laragon\bin\php" -Directory -ErrorAction SilentlyContinue |
+                   Where-Object { Test-Path (Join-Path $_.FullName "php.exe") } |
+                   Sort-Object Name -Descending
+
+    if (-not $laragonPhps) {
+        Write-Host "   [!] Belum ada folder PHP terdeteksi di C:\laragon\bin\php." -ForegroundColor Yellow
+        return
+    }
+
+    $topPhp = $laragonPhps[0]
+    $topPhpDir = $topPhp.FullName
+    $topPhpExe = Join-Path $topPhpDir "php.exe"
+
+    Write-Host "   [OK] PHP Utama Sistem Dikunci ke: $($topPhp.Name)" -ForegroundColor Green
+
+    # 2. Daftarkan ke C:\laragon\usr\laragon.ini sebagai versi PHP default Laragon
+    $usrLaragonIni = "C:\laragon\usr\laragon.ini"
+    if (Test-Path $usrLaragonIni) {
+        try {
+            $iniTxt = [System.IO.File]::ReadAllText($usrLaragonIni)
+            if ($iniTxt -match '(?m)^Version=.*$') {
+                $newIniTxt = $iniTxt -replace '(?m)^Version=.*$', "Version=$($topPhp.Name)"
+                [System.IO.File]::WriteAllText($usrLaragonIni, $newIniTxt)
+                Write-Host "   [OK] Laragon GUI dikonfigurasi ke PHP: $($topPhp.Name)" -ForegroundColor Green
+            }
+        } catch {}
+    }
+
+    # 3. Bersihkan PATH sistem dari versi PHP lain (XAMPP atau PHP lama) dan daftarkan PHP terbaru ini di System PATH
+    try {
+        $target = [EnvironmentVariableTarget]::Machine
+        $currentSysPath = [Environment]::GetEnvironmentVariable("Path", $target)
+        if ($currentSysPath) {
+            $sysParts = ($currentSysPath -split ';') | Where-Object {
+                $_ -ne "" -and $_ -notlike "*\xampp\php*" -and $_ -notlike "*\laragon\bin\php\*"
+            }
+            $newSysPath = "$topPhpDir;" + ($sysParts -join ';')
+            [Environment]::SetEnvironmentVariable("Path", $newSysPath, $target)
+        }
+    } catch {}
+
+    # 4. Perbarui PATH sesi aktif PowerShell agar langsung memakai PHP terbaru
+    $sessionParts = ($env:Path -split ';') | Where-Object {
+        $_ -ne "" -and $_ -notlike "*\xampp\php*" -and $_ -notlike "*\laragon\bin\php\*"
+    }
+    $env:Path = "$topPhpDir;" + ($sessionParts -join ';')
+    Write-Host "   [OK] System PATH & Session PATH dikunci ke PHP: $topPhpDir" -ForegroundColor Green
+
+    # 5. Kunci Environment Variables PHP_BINARY & PHP_PATH
+    Set-SystemEnvVar -Name "PHP_BINARY" -Value $topPhpExe
+    Set-SystemEnvVar -Name "PHP_PATH" -Value $topPhpDir
+    $env:PHP_BINARY = $topPhpExe
+    $env:PHP_PATH = $topPhpDir
+
+    # 6. Kunci ke Composer: update wrapper script dan environment
+    $composerBat = "C:\ProgramData\ComposerSetup\bin\composer.bat"
+    if (Test-Path $composerBat) {
+        try {
+            $compBatContent = "@echo off`r`n`"$topPhpExe`" `"%~dp0composer.phar`" %*`r`n"
+            [System.IO.File]::WriteAllText($composerBat, $compBatContent)
+            Write-Host "   [OK] Composer wrapper dikunci langsung ke $topPhpExe" -ForegroundColor Green
+        } catch {}
+    }
+
+    # 7. Tes output versi PHP
+    try {
+        $vOutput = & $topPhpExe -v 2>&1 | Out-String
+        $firstLine = ($vOutput.Trim() -split "`r?`n")[0]
+        Write-Host "   [OK] Uji Eksekusi PHP Terpadu: $firstLine" -ForegroundColor Green
+    } catch {}
 }
 
 # 9. Fungsi Khusus Setup XAMPP & Pencegahan Bentrok Port dengan Laragon
@@ -1062,26 +1428,33 @@ function Setup-ComposerAndLaravel {
     [Environment]::SetEnvironmentVariable("COMPOSER_NO_INTERACTION", "1", [EnvironmentVariableTarget]::Process)
     [Environment]::SetEnvironmentVariable("COMPOSER_ALLOW_SUPERUSER", "1", [EnvironmentVariableTarget]::Process)
 
-    # 1. Cari PHP yang aktif di sistem (Laragon atau XAMPP) dan SELALU masukkan ke PATH sistem & sesi aktif
+    # 1. Cari PHP yang aktif di sistem: UTAMAKAN PHP VERSI TERBARU dari Laragon Custom Stack
     $phpPath = $null
-    $phpSearch = @(
-        "C:\laragon\bin\php\php-*\php.exe",
-        "C:\laragon\bin\php\*\php.exe",
-        "C:\xampp\php\php.exe"
-    )
-    foreach ($pattern in $phpSearch) {
-        $found = Get-Item $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($found) { $phpPath = $found.FullName; break }
+    $laragonPhps = Get-ChildItem -Path "C:\laragon\bin\php" -Directory -ErrorAction SilentlyContinue |
+                   Where-Object { Test-Path (Join-Path $_.FullName "php.exe") } |
+                   Sort-Object Name -Descending
+
+    if ($laragonPhps) {
+        $phpPath = Join-Path $laragonPhps[0].FullName "php.exe"
+    } else {
+        $phpSearch = @(
+            "C:\laragon\bin\php\php-*\php.exe",
+            "C:\laragon\bin\php\*\php.exe",
+            "C:\xampp\php\php.exe"
+        )
+        foreach ($pattern in $phpSearch) {
+            $found = Get-Item $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) { $phpPath = $found.FullName; break }
+        }
     }
 
     $phpDir = $null
     if ($phpPath) {
         $phpDir = Split-Path -Parent $phpPath
         Add-ToSystemPath -DirToAdd $phpDir
-        if ($env:Path -notlike "*$phpDir*") {
-            $env:Path = "$phpDir;" + $env:Path
-        }
-        Write-Host "   [OK] PHP terdeteksi di $phpPath dan ditambahkan ke System PATH." -ForegroundColor Green
+        # Pastikan diletakkan di baris paling depan sesi aktif agar perintah php/composer langsung memakai versi terbaru
+        $env:Path = "$phpDir;" + ($env:Path -replace [regex]::Escape("$phpDir;"), "")
+        Write-Host "   [OK] PHP aktif dikunci ke: $phpPath (Versi terbaru Laragon)" -ForegroundColor Green
     } else {
         Write-Host "   [!] PHP belum ditemukan di C:\laragon\bin\php atau C:\xampp\php." -ForegroundColor Yellow
     }
@@ -1130,7 +1503,7 @@ function Setup-ComposerAndLaravel {
         }
     }
 
-    # 3. Pastikan ekstensi zip, fileinfo, openssl, curl aktif di seluruh php.ini yang terpasang
+    # 3. Pastikan ekstensi yang valid (fileinfo, openssl, curl, pdo_mysql, mbstring, dan zip jika ada dll-nya) aktif
     $allPhpInis = @(
         (Get-ChildItem -Path "C:\laragon\bin\php\*\php.ini" -File -ErrorAction SilentlyContinue),
         (Get-ChildItem -Path "C:\xampp\php\php.ini" -File -ErrorAction SilentlyContinue)
@@ -1139,22 +1512,40 @@ function Setup-ComposerAndLaravel {
     foreach ($iniFile in $allPhpInis) {
         try {
             $iniContent = [System.IO.File]::ReadAllText($iniFile.FullName)
-            $newIni = $iniContent -replace '(?m)^;\s*extension\s*=\s*zip\b', 'extension=zip'
+            $phpDir = $iniFile.Directory.FullName
+            $extDir = Join-Path $phpDir "ext"
+            $hasZipDll = (Test-Path (Join-Path $extDir "php_zip.dll")) -or (Test-Path (Join-Path $extDir "zip.dll"))
+
+            $newIni = $iniContent
+            if ($hasZipDll) {
+                $newIni = $newIni -replace '(?m)^;\s*extension\s*=\s*zip\b', 'extension=zip'
+                $newIni = $newIni -replace '(?m)^;\s*extension\s*=\s*php_zip\.dll\b', 'extension=php_zip.dll'
+                if ($newIni -notmatch '(?m)^extension\s*=\s*(zip|php_zip\.dll)\b') { $newIni += "`r`nextension=zip`r`n" }
+            } else {
+                # Cegah PHP Startup Warning jika library php_zip.dll tidak disediakan PHP build
+                $newIni = $newIni -replace '(?m)^\s*extension\s*=\s*php_zip\.dll\b', ';extension=php_zip.dll'
+                $newIni = $newIni -replace '(?m)^\s*extension\s*=\s*zip\b', ';extension=zip'
+            }
+
             $newIni = $newIni -replace '(?m)^;\s*extension\s*=\s*fileinfo\b', 'extension=fileinfo'
             $newIni = $newIni -replace '(?m)^;\s*extension\s*=\s*curl\b', 'extension=curl'
             $newIni = $newIni -replace '(?m)^;\s*extension\s*=\s*openssl\b', 'extension=openssl'
             $newIni = $newIni -replace '(?m)^;\s*extension\s*=\s*pdo_mysql\b', 'extension=pdo_mysql'
             $newIni = $newIni -replace '(?m)^;\s*extension\s*=\s*mbstring\b', 'extension=mbstring'
-            
-            # Jika belum ada sama sekali, tambahkan di baris baru
-            if ($newIni -notmatch '(?m)^extension\s*=\s*zip\b') { $newIni += "`r`nextension=zip`r`n" }
+
             if ($newIni -notmatch '(?m)^extension\s*=\s*fileinfo\b') { $newIni += "`r`nextension=fileinfo`r`n" }
             if ($newIni -notmatch '(?m)^extension\s*=\s*curl\b') { $newIni += "`r`nextension=curl`r`n" }
             if ($newIni -notmatch '(?m)^extension\s*=\s*openssl\b') { $newIni += "`r`nextension=openssl`r`n" }
 
+            if (Test-Path $extDir) {
+                $escapedExt = $extDir.Replace('\', '/')
+                $newIni = $newIni -replace '(?m)^\s*;?\s*extension_dir\s*=\s*"ext"', "extension_dir = `"$escapedExt`""
+                $newIni = $newIni -replace '(?m)^\s*;?\s*extension_dir\s*=\s*''ext''', "extension_dir = `"$escapedExt`""
+            }
+
             if ($iniContent -ne $newIni) {
                 [System.IO.File]::WriteAllText($iniFile.FullName, $newIni)
-                Write-Host "   [OK] Ekstensi zip, fileinfo, curl & openssl aktif di $($iniFile.FullName)" -ForegroundColor Green
+                Write-Host "   [OK] Konfigurasi php.ini bebas-warning diperbarui: $($iniFile.FullName)" -ForegroundColor Green
             }
         } catch {}
     }
@@ -1205,6 +1596,9 @@ function Setup-ComposerAndLaravel {
             Write-Host "   [i] Melewati require online Laravel Installer." -ForegroundColor Gray
         }
     }
+
+    # Sinkronkan kembali seluruh ekosistem PHP dan Composer ke versi PHP terbaru
+    Sync-UnifiedLaragonPhp
 }
 
 # 11.1 Fungsi Setup Microsoft Visual Studio 2022 Community (Desktop C++ Auto-Layout & Offline Cache)
@@ -1408,27 +1802,72 @@ function Setup-FlutterSDK {
     # 4. OTOMASI FLUTTER DOCTOR: SETTING SEMUA CENTANG HIJAU
     Write-Host "`n   [>>>] Mengonfigurasi Flutter Doctor agar semua centang hijau..." -ForegroundColor Cyan
 
-    # A. Deteksi & Kunci Android SDK path
+    # A. Deteksi & Kunci Android Studio Directory untuk Flutter Doctor
+    $asSearch = @(
+        "C:\Program Files\Android\Android Studio",
+        "C:\Program Files\Android Studio",
+        "C:\Program Files (x86)\Android\Android Studio",
+        "C:\Program Files (x86)\Android Studio",
+        "$env:LOCALAPPDATA\Programs\Android Studio"
+    )
+    $userAs = Get-ChildItem -Path "C:\Users\*\AppData\Local\Programs\Android Studio" -Directory -ErrorAction SilentlyContinue
+    if ($userAs) {
+        foreach ($ua in $userAs) { $asSearch += $ua.FullName }
+    }
+    $detectedAs = $null
+    foreach ($as in $asSearch) {
+        if ((Test-Path (Join-Path $as "bin\studio64.exe")) -or (Test-Path $as)) {
+            $detectedAs = $as
+            & flutter config --android-studio-dir "$as" | Out-Null
+            Write-Host "   [OK] Android Studio dikunci ke: $as" -ForegroundColor Green
+            break
+        }
+    }
+
+    # B. Deteksi & Kunci Android SDK path
     $androidSdkSearch = @(
         "$env:LOCALAPPDATA\Android\Sdk",
         "C:\Android\Sdk",
         "D:\Android\Sdk",
-        "C:\Program Files (x86)\Android\android-sdk"
+        "C:\Android\android-sdk",
+        "C:\Program Files (x86)\Android\android-sdk",
+        "C:\Users\Public\Android\Sdk"
     )
+    $userSdks = Get-ChildItem -Path "C:\Users\*\AppData\Local\Android\Sdk" -Directory -ErrorAction SilentlyContinue
+    if ($userSdks) {
+        foreach ($us in $userSdks) {
+            $androidSdkSearch += $us.FullName
+        }
+    }
     $detectedSdk = $null
     foreach ($sdk in $androidSdkSearch) {
         if (Test-Path $sdk) { $detectedSdk = $sdk; break }
     }
+
+    if (-not $detectedSdk) {
+        $defaultSdk = "C:\Android\Sdk"
+        if (-not (Test-Path $defaultSdk)) {
+            New-Item -ItemType Directory -Path $defaultSdk -Force | Out-Null
+        }
+        $detectedSdk = $defaultSdk
+    }
+
     if ($detectedSdk) {
         & flutter config --android-sdk "$detectedSdk" | Out-Null
         Set-SystemEnvVar -Name "ANDROID_HOME" -Value $detectedSdk
         Set-SystemEnvVar -Name "ANDROID_SDK_ROOT" -Value $detectedSdk
         $env:ANDROID_HOME = $detectedSdk
         $env:ANDROID_SDK_ROOT = $detectedSdk
+
+        $platTools = Join-Path $detectedSdk "platform-tools"
+        $cmdTools = Join-Path $detectedSdk "cmdline-tools\latest\bin"
+        if (Test-Path $platTools) { Add-ToSystemPath -DirToAdd $platTools }
+        if (Test-Path $cmdTools) { Add-ToSystemPath -DirToAdd $cmdTools }
+
         Write-Host "   [OK] Android SDK dikunci ke: $detectedSdk" -ForegroundColor Green
     }
 
-    # B. Deteksi & Kunci JDK untuk Flutter & Android Toolchain
+    # C. Deteksi & Kunci JDK untuk Flutter & Android Toolchain
     $jdkSearch = @(
         "C:\Program Files\Android\Android Studio\jbr",
         "C:\Program Files\Android\Android Studio\jre",
@@ -1452,19 +1891,36 @@ function Setup-FlutterSDK {
         Write-Host "   [OK] JDK Flutter dikunci ke: $detectedJdk" -ForegroundColor Green
     }
 
-    # C. Aktifkan platform desktop Windows, Web, dan Android
-    & flutter config --enable-windows-desktop --enable-web --enable-android --no-analytics | Out-Null
-    Write-Host "   [OK] Platform Windows Desktop & Web diaktifkan!" -ForegroundColor Green
+    # D. Deteksi & Kunci Google Chrome / Edge untuk Flutter Web
+    $chromeSearch = @(
+        "C:\Program Files\Google\Chrome\Application\chrome.exe",
+        "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe",
+        "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        "C:\Program Files\Microsoft\Edge\Application\msedge.exe"
+    )
+    foreach ($chr in $chromeSearch) {
+        if (Test-Path $chr) {
+            Set-SystemEnvVar -Name "CHROME_EXECUTABLE" -Value $chr
+            $env:CHROME_EXECUTABLE = $chr
+            Write-Host "   [OK] Chrome Web Engine dikunci ke: $chr" -ForegroundColor Green
+            break
+        }
+    }
 
-    # D. Auto-Accept Android Licenses (Non-Interaktif)
+    # E. Aktifkan platform desktop Windows, Web, dan Android
+    & flutter config --enable-windows-desktop --enable-web --enable-android --no-analytics | Out-Null
+    Write-Host "   [OK] Platform Windows Desktop, Web & Android diaktifkan!" -ForegroundColor Green
+
+    # F. Auto-Accept Android Licenses (Non-Interaktif)
     Write-Host "   [i] Menyetujui semua lisensi Android SDK secara otomatis (Accept Licenses)..." -ForegroundColor Yellow
     try {
-        $yesInputs = ("y`n" * 15)
+        $yesInputs = ("y`n" * 20)
         $yesInputs | & flutter doctor --android-licenses 2>&1 | Out-Null
         Write-Host "   [OK] Semua lisensi Android SDK disetujui (All Android licenses accepted)!" -ForegroundColor Green
     } catch {}
 
-    # E. Jalankan Flutter Doctor ringkas
+    # G. Jalankan Flutter Doctor ringkas
     Write-Host "`n   --- Hasil Flutter Doctor Terkini ---" -ForegroundColor Cyan
     try {
         & flutter doctor
@@ -1528,7 +1984,8 @@ function Test-LabSoftwareStatus {
                 $res = Receive-Job $job -ErrorAction SilentlyContinue | Out-String
                 Remove-Job $job -Force -ErrorAction SilentlyContinue
                 if (!([string]::IsNullOrWhiteSpace($res))) {
-                    $firstLine = ($res.Trim() -split "`r?`n")[0]
+                    $cleanLines = ($res.Trim() -split "`r?`n") | Where-Object { $_ -notmatch '(?i)warning:' -and -not [string]::IsNullOrWhiteSpace($_) }
+                    $firstLine = if ($cleanLines) { $cleanLines[0] } else { ($res.Trim() -split "`r?`n")[0] }
                     Write-Host $firstLine -ForegroundColor Green
                 } else {
                     Write-Host "Belum Terdeteksi di PATH" -ForegroundColor Yellow
@@ -1544,6 +2001,8 @@ function Test-LabSoftwareStatus {
     }
 
     $guiApps = @(
+        @{ Name = "7-Zip";               Path = @("C:\Program Files\7-Zip\7z.exe", "C:\Program Files (x86)\7-Zip\7z.exe"); Reg = "*7-Zip*" },
+        @{ Name = "WinRAR";              Path = @("C:\Program Files\WinRAR\WinRAR.exe", "C:\Program Files (x86)\WinRAR\WinRAR.exe"); Reg = "*WinRAR*" },
         @{ Name = "Delphi (RAD Studio)"; Path = @("C:\Program Files*\Embarcadero\Studio\*\bin\bds.exe", "C:\Program Files (x86)\Embarcadero\Studio\*\bin\bds.exe"); Reg = "*Delphi*" },
         @{ Name = "Cisco Packet Tracer"; Path = @("C:\Program Files\Cisco Packet Tracer *\bin\PacketTracer.exe", "C:\Program Files (x86)\Cisco Packet Tracer *\bin\PacketTracer.exe"); Reg = "*Packet Tracer*" },
         @{ Name = "Visual Studio 2022";  Path = @("C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe", "C:\Program Files (x86)\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe"); Reg = "*Visual Studio*" },
@@ -1629,19 +2088,25 @@ function Run-FullInstallation {
     Write-Host "`n[>>>] Memulai Otomasi Lengkap Standarisasi Software Lab TI..." -ForegroundColor Cyan
     Write-Host "      (Semua software wajib: Yang sudah terpasang otomatis diskip)`n" -ForegroundColor DarkGray
 
-    # 1. VS Code (Otomatis Silent)
+    # 1. 7-Zip (High-Speed Multi-Format Archive Extractor)
+    Setup-7Zip
+
+    # 2. WinRAR (Lab Archive Support .rar/.zip)
+    Setup-WinRAR
+
+    # 3. VS Code (Otomatis Silent)
     Install-AppSmart -Name "Visual Studio Code" -FilePattern "*Code*.exe" -SilentArgs "/VERYSILENT /NORESTART /MERGETASKS=!runcode,addcontextmenufiles,addcontextmenufolders,associatewithfiles,addtopath" -WingetId "Microsoft.VisualStudioCode" -CheckPath "$env:LOCALAPPDATA\Programs\Microsoft VS Code\Code.exe"
 
-    # 2. Python 3.12 (Otomatis Silent + PATH)
+    # 4. Python 3.12 (Otomatis Silent + PATH)
     Setup-Python
 
-    # 3. Java JDK 17 (Otomatis Silent + JAVA_HOME)
+    # 5. Java JDK 17 (Otomatis Silent + JAVA_HOME)
     Setup-JavaJDK
 
-    # 4. Node.js LTS & NPM (Otomatis Silent + Global PATH)
+    # 6. Node.js LTS & NPM (Otomatis Silent + Global PATH)
     Setup-NodeJS
 
-    # 5. Oracle VM VirtualBox (Otomatis Silent dengan Multi-CDN Mirror Cepat)
+    # 7. Oracle VM VirtualBox (Otomatis Silent dengan Multi-CDN Mirror Cepat)
     $vboxMirrors = @(
         "https://download.virtualbox.org/virtualbox/7.1.6/VirtualBox-7.1.6-167084-Win.exe",
         "https://mirror.ox.ac.uk/sites/download.virtualbox.org/virtualbox/7.1.6/VirtualBox-7.1.6-167084-Win.exe",
@@ -1655,7 +2120,7 @@ function Run-FullInstallation {
                      -WingetId "Oracle.VirtualBox" `
                      -CheckPath @("C:\Program Files\Oracle\VirtualBox\VirtualBox.exe", "C:\Program Files (x86)\Oracle\VirtualBox\VirtualBox.exe")
 
-    # 6. Apache NetBeans (Otomatis Silent dengan Java JDK 17+ Terdeteksi & Multi-Mirror Cepat)
+    # 8. Apache NetBeans (Otomatis Silent dengan Java JDK 17+ Terdeteksi & Multi-Mirror Cepat)
     $nbJdkPath = $null
     $nbJdkCandidates = @(
         $env:JAVA_HOME,
@@ -1713,16 +2178,26 @@ function Run-FullInstallation {
         }
     }
 
-    # 7. Android Studio (Otomatis Silent)
-    Install-AppSmart -Name "Android Studio" -FilePattern "*Android*Studio*.exe" -SilentArgs "/S" -WingetId "Google.AndroidStudio" -CheckPath "C:\Program Files\Android\Android Studio\bin\studio64.exe"
+    # 9. Android Studio (Otomatis Silent dengan Multi-CDN Google Resmi & Winget Fallback)
+    $androidStudioMirrors = @(
+        "https://redirector.gvt1.com/edgedl/android/studio/install/2024.2.1.12/android-studio-2024.2.1.12-windows.exe",
+        "https://dl.google.com/dl/android/studio/install/2024.2.1.12/android-studio-2024.2.1.12-windows.exe",
+        "https://dl.google.com/android/studio/install/2024.1.2.13/android-studio-2024.1.2.13-windows.exe"
+    )
+    Install-AppSmart -Name "Android Studio" `
+                     -FilePattern @("*Android*Studio*.exe", "*android-studio*.exe") `
+                     -DownloadUrls $androidStudioMirrors `
+                     -SilentArgs "/S" `
+                     -WingetId "Google.AndroidStudio" `
+                     -CheckPath @("C:\Program Files\Android\Android Studio\bin\studio64.exe", "C:\Program Files\Android Studio\bin\studio64.exe", "C:\Program Files (x86)\Android\Android Studio\bin\studio64.exe")
 
-    # 8. QGIS Desktop (Otomatis Silent)
+    # 10. QGIS Desktop (Otomatis Silent)
     Install-AppSmart -Name "QGIS Desktop" -FilePattern "*QGIS*.msi" -SilentArgs "/qn" -WingetId "OSGeo.QGIS" -CheckPath "C:\Program Files\QGIS *\bin\qgis-bin.exe"
 
-    # 9. Microsoft Visual Studio 2022 Community (Desktop development with C++ Workload - Support 100% Offline Layout)
+    # 11. Microsoft Visual Studio 2022 Community (Desktop development with C++ Workload - Support 100% Offline Layout)
     Setup-VisualStudio
 
-    # 10. Arduino IDE (Arduino Uno, Nano, Mega, IoT)
+    # 12. Arduino IDE (Arduino Uno, Nano, Mega, IoT)
     $arduinoMirrors = @(
         "https://github.com/arduino/arduino-ide/releases/download/2.3.10/arduino-ide_2.3.10_Windows_64bit.msi",
         "https://downloads.arduino.cc/arduino-ide/arduino-ide_2.3.10_Windows_64bit.msi"
@@ -1734,19 +2209,19 @@ function Run-FullInstallation {
                      -WingetId "ArduinoSA.IDE.stable" `
                      -CheckPath @("C:\Program Files\Arduino IDE\Arduino IDE.exe", "C:\Program Files\Arduino\arduino.exe", "C:\Users\*\AppData\Local\Programs\Arduino IDE\Arduino IDE.exe", "C:\Users\*\AppData\Local\Arduino*\arduino*.exe", "C:\Program Files (x86)\Arduino\arduino.exe")
 
-    # 10. Flutter SDK (All Doctor Checks Passed & Auto-Configured)
+    # 13. Flutter SDK (All Doctor Checks Passed & Auto-Configured)
     Setup-FlutterSDK
 
-    # 11. Laragon (Installer Resmi 6.0.0 + Auto-Overlay Stack Custom)
+    # 14. Laragon (Installer Resmi 6.0.0 + Auto-Overlay Stack Custom)
     Setup-LaragonStack
 
-    # 12. Composer & Laravel Setup
+    # 15. Composer & Laravel Setup
     Setup-ComposerAndLaravel
 
-    # 13. XAMPP (Otomatis Silent + Konfigurasi Port Anti-Bentrok)
+    # 16. XAMPP (Otomatis Silent + Konfigurasi Port Anti-Bentrok)
     Setup-XamppStack
 
-    # 14. Cisco Packet Tracer (Multi-Mirror Google Drive Resmi Lab TI)
+    # 17. Cisco Packet Tracer (Multi-Mirror Google Drive Resmi Lab TI)
     $ciscoMirrors = @(
         "https://drive.google.com/file/d/1N_YQNs2xFrdFGRPs4kqgF6LGOYDp37ZK/view?usp=sharing",
         "https://drive.google.com/file/d/1O4flOVt7G-xZmfJSlxP3aLjTj1JM_LYP/view?usp=sharing",
@@ -1754,15 +2229,15 @@ function Run-FullInstallation {
         "https://drive.google.com/file/d/1YbIfp1OyVXl_uksvGu7w82KcHB4_UpR-/view?usp=sharing"
     )
     Install-AppSmart -Name "Cisco Packet Tracer" `
-                     -FilePattern @("*packettracer*.exe", "*PacketTracer*.exe", "*Cisco*.exe") `
+                     -FilePattern @("*packettracer*.exe", "*PacketTracer*.exe", "*Cisco*.exe", "*packettracer*.rar", "*cisco*.rar", "*packettracer*.zip") `
                      -DownloadUrls $ciscoMirrors `
                      -SilentArgs "/VERYSILENT /NORESTART" `
                      -CheckPath @("C:\Program Files\Cisco Packet Tracer *\bin\PacketTracer.exe", "C:\Program Files (x86)\Cisco Packet Tracer *\bin\PacketTracer.exe")
 
-    # 15. Embarcadero Delphi (Pihak Ketiga / Interaktif)
+    # 18. Embarcadero Delphi (Pihak Ketiga / Interaktif)
     Install-AppSmart -Name "Embarcadero Delphi" -FilePattern "*delphi*.exe" -IsInteractive -CheckPath @("C:\Program Files*\Embarcadero\Studio\*\bin\bds.exe", "C:\Program Files (x86)\Embarcadero\Studio\*\bin\bds.exe")
 
-    # 16. Proteus Design Suite (Pihak Ketiga / Interaktif)
+    # 19. Proteus Design Suite (Pihak Ketiga / Interaktif)
     Install-AppSmart -Name "Proteus Design Suite" -FilePattern "*proteus*.exe" -IsInteractive -CheckPath @("C:\Program Files*\Labcenter Electronics\Proteus *\BIN\PDS.EXE", "C:\Program Files (x86)\Labcenter Electronics\Proteus *\BIN\PDS.EXE")
 
     # ==============================================================================
@@ -1772,7 +2247,7 @@ function Run-FullInstallation {
     Clear-Host
     Show-SmartLabBanner
 
-    $totalApps = $script:InstallResults.Count
+    $totalApps = if ($script:InstallResults) { $script:InstallResults.Count } else { 0 }
     $berhasil = ($script:InstallResults | Where-Object { $_.Status -in @("SUDAH TERPASANG", "BERHASIL DIINSTAL") } | Measure-Object).Count
     $menunggu = ($script:InstallResults | Where-Object { $_.Status -eq "BELUM TERSEDIA" } | Measure-Object).Count
     $gagal    = ($script:InstallResults | Where-Object { $_.Status -eq "GAGAL" } | Measure-Object).Count
@@ -1780,7 +2255,7 @@ function Run-FullInstallation {
     Write-Host "==============================================================================" -ForegroundColor Green
     Write-Host "               SELESAI - REKAPITULASI STANDARISASI LAB TI                      " -ForegroundColor Green
     Write-Host "==============================================================================" -ForegroundColor Green
-    Write-Host "  Total Software Diproses   : $totalApps dari 17 Software Standar" -ForegroundColor White
+    Write-Host "  Total Software Diproses   : $totalApps dari 19 Software Standar" -ForegroundColor White
     Write-Host "  [OK] Berhasil / Terpasang : $berhasil Software" -ForegroundColor Green
     if ($menunggu -gt 0) {
         Write-Host "  [i] Menunggu Master Offline: $menunggu Software (Delphi / Proteus lisensi lab)" -ForegroundColor Yellow
@@ -1799,11 +2274,320 @@ function Run-FullInstallation {
         elseif ($item.Status -eq "GAGAL") { $color = "Red" }
         elseif ($item.Status -eq "SUDAH TERPASANG") { $color = "Cyan" }
 
-        $shortKet = if ($item.Keterangan.Length -gt 28) { $item.Keterangan.Substring(0, 25) + "..." } else { $item.Keterangan }
+        $shortKet = if ($item.Keterangan -and $item.Keterangan.Length -gt 28) { $item.Keterangan.Substring(0, 25) + "..." } else { $item.Keterangan }
         Write-Host ("  {0,-3} | {1,-30} | {2,-18} | {3}" -f $idx, $item.Name, $item.Status, $shortKet) -ForegroundColor $color
         $idx++
     }
     Write-Host "==============================================================================`n" -ForegroundColor Green
+}
+
+# ==============================================================================
+# FUNGSI KHUSUS UNDUH SAJA MASTER OFFLINE KE FLASHDISK (APPS/)
+# ==============================================================================
+function Start-DownloadOnlyMaster {
+    Clear-Host
+    Show-SmartLabBanner
+    Write-Host "==============================================================================" -ForegroundColor Cyan
+    Write-Host "  MODE UNDUH SAJA: MENYIAPKAN SELURUH MASTER OFFLINE KE FOLDER APPS/          " -ForegroundColor Cyan
+    Write-Host "==============================================================================" -ForegroundColor Cyan
+    Write-Host "Fungsi ini akan mengunduh seluruh file master software lab ke dalam folder:" -ForegroundColor Gray
+    Write-Host "-> $AppsDir" -ForegroundColor Yellow
+    Write-Host "(Tidak ada aplikasi yang dipasang ke Windows pada mode ini. Aman untuk persiapan lab).`n" -ForegroundColor DarkGray
+
+    if (-not (Test-Path $AppsDir)) {
+        New-Item -ItemType Directory -Path $AppsDir -Force | Out-Null
+    }
+
+    $downloadTargets = @(
+        @{
+            Name = "7-Zip (High-Speed Archive Extractor)"
+            FilePattern = @("*7z*x64*.exe", "*7z*.exe")
+            DestFile = "7z2408-x64.exe"
+            Urls = @("https://www.7-zip.org/a/7z2408-x64.exe", "https://github.com/ip7z/7zip/releases/download/24.08/7z2408-x64.exe")
+        },
+        @{
+            Name = "WinRAR (Lab Archive Support)"
+            FilePattern = @("*winrar*x64*.exe", "*winrar*.exe", "*wrar*.exe")
+            DestFile = "winrar-x64-701.exe"
+            Urls = @("https://www.rarlab.com/rar/winrar-x64-701.exe", "https://www.rarlab.com/rar/winrar-x64-700.exe")
+        },
+        @{
+            Name = "Visual Studio Code"
+            FilePattern = @("*VSCode*Setup*.exe", "*code*setup*.exe")
+            DestFile = "VSCodeUserSetup-x64.exe"
+            Urls = @("https://update.code.visualstudio.com/latest/win32-x64-user/stable", "https://az764295.vo.msecnd.net/stable/latest/VSCodeUserSetup-x64.exe")
+        },
+        @{
+            Name = "Python 3.12 (with PIP)"
+            FilePattern = @("*python-3.12*.exe", "*python*.exe")
+            DestFile = "python-3.12.8-amd64.exe"
+            Urls = @("https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe", "https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe")
+        },
+        @{
+            Name = "Java JDK 17 LTS (Eclipse Adoptium Temurin)"
+            FilePattern = @("*Temurin*17*.msi", "*jdk*17*.msi", "*Temurin*.msi")
+            DestFile = "OpenJDK17U-jdk_x64_windows.msi"
+            Urls = @("https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.13%2B11/OpenJDK17U-jdk_x64_windows_hotspot_17.0.13_11.msi")
+        },
+        @{
+            Name = "Node.js LTS (with NPM)"
+            FilePattern = @("*node*v*.msi", "*node*.msi")
+            DestFile = "node-v22.14.0-x64.msi"
+            Urls = @("https://nodejs.org/dist/v22.14.0/node-v22.14.0-x64.msi", "https://nodejs.org/dist/v20.18.3/node-v20.18.3-x64.msi")
+        },
+        @{
+            Name = "Oracle VM VirtualBox"
+            FilePattern = @("*VirtualBox*.exe", "*VirtualBox*.msi")
+            DestFile = "VirtualBox-7.1.6-Win.exe"
+            Urls = @("https://download.virtualbox.org/virtualbox/7.1.6/VirtualBox-7.1.6-167084-Win.exe", "https://mirror.ox.ac.uk/sites/download.virtualbox.org/virtualbox/7.1.6/VirtualBox-7.1.6-167084-Win.exe")
+        },
+        @{
+            Name = "Apache NetBeans IDE 25"
+            FilePattern = @("*NetBeans*.exe", "*Apache-NetBeans*.exe")
+            DestFile = "Apache-NetBeans-25-bin-windows-x64.exe"
+            Urls = @("https://dlcdn.apache.org/netbeans/netbeans-installers/25/Apache-NetBeans-25-bin-windows-x64.exe", "https://github.com/apache/netbeans/releases/download/25/Apache-NetBeans-25-bin-windows-x64.exe")
+        },
+        @{
+            Name = "Android Studio"
+            FilePattern = @("*Android*Studio*.exe", "*android-studio*.exe")
+            DestFile = "android-studio-2024.2.1.12-windows.exe"
+            Urls = @("https://redirector.gvt1.com/edgedl/android/studio/install/2024.2.1.12/android-studio-2024.2.1.12-windows.exe", "https://dl.google.com/dl/android/studio/install/2024.2.1.12/android-studio-2024.2.1.12-windows.exe")
+        },
+        @{
+            Name = "QGIS Desktop"
+            FilePattern = @("*QGIS*.msi")
+            DestFile = "QGIS-OSGeo4W-3.34.14-1.msi"
+            Urls = @("https://qgis.org/downloads/QGIS-OSGeo4W-3.34.14-1.msi")
+        },
+        @{
+            Name = "Arduino IDE"
+            FilePattern = @("*arduino*.msi", "*arduino*.exe")
+            DestFile = "arduino-ide_2.3.10_Windows_64bit.msi"
+            Urls = @("https://github.com/arduino/arduino-ide/releases/download/2.3.10/arduino-ide_2.3.10_Windows_64bit.msi", "https://downloads.arduino.cc/arduino-ide/arduino-ide_2.3.10_Windows_64bit.msi")
+        },
+        @{
+            Name = "Flutter SDK"
+            FilePattern = @("*flutter*windows*.zip", "*flutter*.zip")
+            DestFile = "flutter_windows_stable.zip"
+            Urls = @("https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.24.5-stable.zip", "https://storage.googleapis.com/flutter_infra_release/releases/stable/windows/flutter_windows_3.22.2-stable.zip")
+        },
+        @{
+            Name = "Laragon 6.0.0 (WAMP Installer)"
+            FilePattern = @("*laragon-wamp*.exe", "*laragon*setup*.exe")
+            DestFile = "laragon-wamp-setup-6.0.0.exe"
+            Urls = @("https://github.com/leokhoa/laragon/releases/download/6.0.0/laragon-wamp.exe", "https://downloads.sourceforge.net/project/laragon/laragon-wamp.exe")
+        },
+        @{
+            Name = "Laragon Custom Stack (PHP 8.5/8.4/8.3, MySQL, phpMyAdmin)"
+            FilePattern = @("*Laragon*Custom*.rar", "*Custom*Stack*.rar", "*Custom*Stack*.zip")
+            DestFile = "Laragon_Custom_Stack.rar"
+            Urls = @(
+                "https://drive.google.com/file/d/1nn1aUQm1FiVlFRy-pIerSxCkK1I7MtJ_/view?usp=sharing",
+                "https://drive.google.com/file/d/14IyGfCdk3VOw-MWYXqA2SkP2S9jq1hBC/view?usp=sharing",
+                "https://drive.google.com/file/d/1Eunm6q6ir8yx0F9ybTPU4dfaOn33fkUt/view?usp=sharing",
+                "https://drive.google.com/file/d/1majSE8h7bR_tRFFz2euHBP3-CNtzigP6/view?usp=sharing"
+            )
+        },
+        @{
+            Name = "Composer (PHP Dependency Manager)"
+            FilePattern = @("*Composer*.exe")
+            DestFile = "Composer-Setup.exe"
+            Urls = @("https://getcomposer.org/Composer-Setup.exe")
+        },
+        @{
+            Name = "XAMPP Server"
+            FilePattern = @("*xampp*.exe")
+            DestFile = "xampp-windows-x64-8.2.12-installer.exe"
+            Urls = @("https://sourceforge.net/projects/xampp/files/XAMPP%20Windows/8.2.12/xampp-windows-x64-8.2.12-0-VS16-installer.exe/download")
+        },
+        @{
+            Name = "Cisco Packet Tracer (Google Drive Multi-Mirror)"
+            FilePattern = @("*packettracer*.exe", "*PacketTracer*.exe", "*Cisco*.exe", "*packettracer*.rar", "*cisco*.rar", "*packettracer*.zip")
+            DestFile = "Cisco_Packet_Tracer_LabTI.rar"
+            Urls = @(
+                "https://drive.google.com/file/d/1N_YQNs2xFrdFGRPs4kqgF6LGOYDp37ZK/view?usp=sharing",
+                "https://drive.google.com/file/d/1O4flOVt7G-xZmfJSlxP3aLjTj1JM_LYP/view?usp=sharing",
+                "https://drive.google.com/file/d/1SeGZ7TGze27bs6d7FJd4nNDW_D8QIj2c/view?usp=sharing",
+                "https://drive.google.com/file/d/1YbIfp1OyVXl_uksvGu7w82KcHB4_UpR-/view?usp=sharing"
+            )
+        }
+    )
+
+    $num = 1
+    $downloadResults = @()
+
+    foreach ($t in $downloadTargets) {
+        Write-Host "`n[{0}/{1}] Memeriksa Master: $($t.Name)" -f $num, ($downloadTargets.Count + 2) -ForegroundColor Yellow
+        $existing = $null
+        foreach ($pat in @($t.FilePattern)) {
+            $f = Get-ChildItem -Path $AppsDir -Filter $pat -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($f) { $existing = $f; break }
+        }
+
+        if ($existing) {
+            $sizeMb = [math]::Round($existing.Length / 1MB, 2)
+            Write-Host "   [OK SUDAH ADA] $($existing.Name) ($sizeMb MB) telah tersimpan di Apps/" -ForegroundColor Green
+            $downloadResults += [PSCustomObject]@{
+                Software = $t.Name
+                Berkas = $existing.Name
+                Ukuran = "$sizeMb MB"
+                Status = "SUDAH ADA"
+            }
+        } else {
+            $destPath = Join-Path $AppsDir $t.DestFile
+            Write-Host "   [>>>] Mengunduh master ke: $($t.DestFile) ..." -ForegroundColor Cyan
+            $dlSuccess = Download-FileWithFastMirrors -Urls $t.Urls -DestinationPath $destPath -ActivityTitle "Mengunduh $($t.Name)"
+            if ($dlSuccess -and (Test-Path $destPath)) {
+                $fInfo = Get-Item $destPath
+                $sizeMb = [math]::Round($fInfo.Length / 1MB, 2)
+                Write-Host "   [BERHASIL DIUNDUH] $($fInfo.Name) ($sizeMb MB)" -ForegroundColor Green
+                $downloadResults += [PSCustomObject]@{
+                    Software = $t.Name
+                    Berkas = $fInfo.Name
+                    Ukuran = "$sizeMb MB"
+                    Status = "BARU DIUNDUH"
+                }
+            } else {
+                Write-Host "   [!] Gagal mengunduh $($t.Name) dari seluruh mirror." -ForegroundColor Red
+                $downloadResults += [PSCustomObject]@{
+                    Software = $t.Name
+                    Berkas = "-"
+                    Ukuran = "-"
+                    Status = "GAGAL UNDUH"
+                }
+            }
+        }
+        $num++
+    }
+
+    # Penanganan Khusus Visual Studio 2022 Community Layout Cache
+    Write-Host "`n[{0}/{1}] Memeriksa Master: Visual Studio 2022 Community (Desktop C++ Offline Layout)" -f $num, ($downloadTargets.Count + 2) -ForegroundColor Yellow
+    $vsLayoutDir = Join-Path $AppsDir "vs_layout"
+    $hasVsCache = (Test-Path $vsLayoutDir) -and (Test-Path (Join-Path $vsLayoutDir "packages"))
+    if ($hasVsCache) {
+        Write-Host "   [OK SUDAH ADA] Folder vs_layout telah lengkap tersimpan di Apps/vs_layout" -ForegroundColor Green
+        $downloadResults += [PSCustomObject]@{
+            Software = "Visual Studio 2022 Community"
+            Berkas = "vs_layout/"
+            Ukuran = "Cache Siap"
+            Status = "SUDAH ADA"
+        }
+    } else {
+        $vsBootstrapper = Join-Path $AppsDir "vs_community.exe"
+        if (-not (Test-Path $vsBootstrapper)) {
+            Write-Host "   [i] Mengunduh bootstrapper resmi Microsoft vs_community.exe..." -ForegroundColor Yellow
+            try {
+                [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+                $wc = New-Object System.Net.WebClient
+                $wc.DownloadFile("https://aka.ms/vs/17/release/vs_community.exe", $vsBootstrapper)
+                $wc.Dispose()
+            } catch {}
+        }
+        if (Test-Path $vsBootstrapper) {
+            Write-Host "   [>>>] Menyiapkan paket offline C++ ke Apps\vs_layout (Proses layout resmi Microsoft)..." -ForegroundColor Cyan
+            $layoutArgs = "--layout `"$vsLayoutDir`" --add Microsoft.VisualStudio.Workload.NativeDesktop --includeRecommended --lang en-US --quiet"
+            $proc = Start-Process -FilePath $vsBootstrapper -ArgumentList $layoutArgs -Wait -PassThru
+            if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
+                Write-Host "   [BERHASIL DIUNDUH] Cache Visual Studio C++ lengkap di Apps\vs_layout!" -ForegroundColor Green
+                $downloadResults += [PSCustomObject]@{
+                    Software = "Visual Studio 2022 Community"
+                    Berkas = "vs_layout/"
+                    Ukuran = "Cache Siap"
+                    Status = "BARU DIUNDUH"
+                }
+            } else {
+                $downloadResults += [PSCustomObject]@{
+                    Software = "Visual Studio 2022 Community"
+                    Berkas = "vs_community.exe"
+                    Ukuran = "Bootstrapper Saja"
+                    Status = "PARSIAL"
+                }
+            }
+        }
+    }
+    $num++
+
+    # Penanganan Khusus Software Pihak Ketiga (Delphi & Proteus)
+    Write-Host "`n[{0}/{1}] Memeriksa Master: Delphi & Proteus (Pihak Ketiga Berlisensi)" -f $num, ($downloadTargets.Count + 2) -ForegroundColor Yellow
+    $delphiFile = Get-ChildItem -Path $AppsDir -Filter "*delphi*.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    $proteusFile = Get-ChildItem -Path $AppsDir -Filter "*proteus*.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+
+    if ($delphiFile) {
+        Write-Host "   [OK SUDAH ADA] Master Delphi: $($delphiFile.Name)" -ForegroundColor Green
+    } else {
+        Write-Host "   [i] Master Delphi belum ada di Apps/. (Silakan salin installer lisensi resmi lab ke Apps/)." -ForegroundColor Gray
+    }
+    if ($proteusFile) {
+        Write-Host "   [OK SUDAH ADA] Master Proteus: $($proteusFile.Name)" -ForegroundColor Green
+    } else {
+        Write-Host "   [i] Master Proteus belum ada di Apps/. (Silakan salin installer lisensi resmi lab ke Apps/)." -ForegroundColor Gray
+    }
+
+    # REKAPITULASI HASIL DOWNLOAD ONLY
+    Clear-Host
+    Show-SmartLabBanner
+    Write-Host "==============================================================================" -ForegroundColor Green
+    Write-Host "        SELESAI - REKAPITULASI CACHE MASTER OFFLINE KE FLASHDISK (APPS/)       " -ForegroundColor Green
+    Write-Host "==============================================================================" -ForegroundColor Green
+
+    $totalSize = 0
+    try {
+        $allFiles = Get-ChildItem -Path $AppsDir -File -Recurse -ErrorAction SilentlyContinue
+        if ($allFiles) {
+            $totalSize = ($allFiles | Measure-Object -Property Length -Sum).Sum
+        }
+    } catch {}
+    $totalGb = [math]::Round($totalSize / 1GB, 2)
+
+    Write-Host "  Lokasi Target Penyimpanan : $AppsDir" -ForegroundColor White
+    Write-Host "  Total Penggunaan Disk     : $totalGb GB" -ForegroundColor Cyan
+    Write-Host "------------------------------------------------------------------------------" -ForegroundColor DarkGray
+    Write-Host ("  {0,-3} | {1,-32} | {2,-14} | {3}" -f "No", "Software", "Status", "Ukuran Berkas") -ForegroundColor Cyan
+    Write-Host "------------------------------------------------------------------------------" -ForegroundColor DarkGray
+
+    $rIdx = 1
+    foreach ($r in $downloadResults) {
+        $c = "Green"
+        if ($r.Status -eq "GAGAL UNDUH") { $c = "Red" }
+        elseif ($r.Status -eq "SUDAH ADA") { $c = "Cyan" }
+        Write-Host ("  {0,-3} | {1,-32} | {2,-14} | {3}" -f $rIdx, $r.Software, $r.Status, $r.Ukuran) -ForegroundColor $c
+        $rIdx++
+    }
+    Write-Host "==============================================================================" -ForegroundColor Green
+    Write-Host "Flashdisk Anda kini telah dilengkapi master offline untuk seluruh lab!`n" -ForegroundColor Green
+}
+
+# ==============================================================================
+# FUNGSI NAVIGASI AMAN: HANYA TOMBOL ENTER UNTUK KEMBALI ATAU KELUAR
+# Mengabaikan tombol sembarang dan membersihkan buffer keyboard agar pengguna
+# memiliki waktu cukup membaca rangkuman hasil tanpa takut tertutup otomatis.
+# ==============================================================================
+function Wait-EnterOnly {
+    param(
+        [string]$PromptMessage = "[Tekan tombol ENTER untuk kembali ke Menu Utama...]"
+    )
+    Write-Host "`n$PromptMessage" -ForegroundColor Cyan
+
+    # 1. Kosongkan buffer keyboard dari tombol yang tertekan sebelumnya
+    try {
+        while ($Host.UI.RawUI.KeyAvailable) {
+            $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+        }
+    } catch {}
+
+    # 2. Tunggu HANYA penekanan tombol ENTER (VirtualKeyCode 13 / ConsoleKey.Enter)
+    # Tombol lain (spasi, huruf, angka, esc, panah) sengaja diabaikan
+    try {
+        while ($true) {
+            $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+            if ($key.VirtualKeyCode -eq 13 -or $key.Character -eq [char]13 -or $key.Key -eq [System.ConsoleKey]::Enter) {
+                break
+            }
+        }
+    } catch {
+        # Fallback jika RawUI tidak aktif / sesi teralihkan: Read-Host hanya merespons saat Enter ditekan
+        $null = Read-Host
+    }
 }
 
 # ==============================================================================
@@ -1815,33 +2599,38 @@ while ($running) {
     Clear-Host
     Show-SmartLabBanner
     Write-Host "Pilihan Tindakan:" -ForegroundColor Yellow
-    Write-Host " [1] Jalankan Otomasi Lengkap Lab (Smart-Skip & Auto-Cache C++ Offline)"
-    Write-Host " [2] Verifikasi Status & Peta Port Software Lab"
-    Write-Host " [3] Keluar`n"
+    Write-Host " [1] Jalankan Otomasi Lengkap Lab (Instalasi & Standarisasi 19 Software)"
+    Write-Host " [2] Unduh Seluruh Master Installer Offline ke Flashdisk (Download Saja / Cache Master)"
+    Write-Host " [3] Verifikasi Status & Peta Port Software Lab"
+    Write-Host " [4] Keluar`n"
 
-    $choice = Read-Host "Masukkan pilihan Anda (1/2/3)"
+    $choice = Read-Host "Masukkan pilihan Anda (1/2/3/4)"
 
     switch ($choice) {
         "1" {
             Run-FullInstallation
-            Write-Host "`n[Tekan Enter atau sembarang tombol untuk kembali ke Menu Utama...]" -ForegroundColor Cyan
-            try { $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") } catch { Read-Host }
+            Wait-EnterOnly -PromptMessage "[Tekan tombol ENTER untuk kembali ke Menu Utama...]"
         }
         "2" {
+            Start-DownloadOnlyMaster
+            Wait-EnterOnly -PromptMessage "[Tekan tombol ENTER untuk kembali ke Menu Utama...]"
+        }
+        "3" {
             Clear-Host
             Show-SmartLabBanner
             Test-LabSoftwareStatus
-            Write-Host "`n[Tekan Enter atau sembarang tombol untuk kembali ke Menu Utama...]" -ForegroundColor Cyan
-            try { $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") } catch { Read-Host }
+            Wait-EnterOnly -PromptMessage "[Tekan tombol ENTER untuk kembali ke Menu Utama...]"
         }
-        "3" {
+        "4" {
             Write-Host "`n[i] Mengembalikan pengaturan daya komputer ke normal..." -ForegroundColor DarkGray
             try { [SystemPowerKeeper]::RestoreNormal() } catch {}
             Write-Host "Keluar dari skrip otomasi SmartLab. Terima kasih." -ForegroundColor Green
+            Wait-EnterOnly -PromptMessage "[Tekan tombol ENTER untuk menutup jendela ini...]"
             $running = $false
+            exit 0
         }
         default {
-            Write-Host "Pilihan tidak valid. Silakan ketik angka 1, 2, atau 3." -ForegroundColor Red
+            Write-Host "Pilihan tidak valid. Silakan ketik angka 1, 2, 3, atau 4." -ForegroundColor Red
             Start-Sleep -Seconds 1
         }
     }

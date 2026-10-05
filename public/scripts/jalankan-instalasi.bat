@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions
 cd /d "%~dp0"
-title Installer Otomatis Software Lab TI - UNIMAL [v3.3.0]
+title Installer Otomatis 19 Software Lab TI - UNIMAL [v3.3.5]
 
 :: 1. Tentukan target file powershell utama
 set "TARGET_PS=%~dp0Apps\install-lab-software.ps1"
@@ -15,13 +15,15 @@ if not exist "%TARGET_PS%" (
     powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12; $wc = New-Object System.Net.WebClient; $urls = @('https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/install-lab-software.ps1', 'https://smartlab.is-best.net/scripts/install-lab-software.ps1'); foreach ($u in $urls) { try { $wc.DownloadFile($u, '%~dp0Apps\install-lab-software.ps1'); break } catch {} }; $wc.Dispose()"
 )
 
-:: 3. Jalankan langsung di jendela PowerShell Administrator yang bersih!
-:: CMD hanya bertindak sebagai pemicu/launcher, lalu jendela CMD ini langsung menutup otomatis.
+:: 3. Jalankan langsung di jendela PowerShell dengan self-elevation cerdas:
+:: - Jika sudah hak Administrator, jalankan langsung tanpa prompt tambahan.
+:: - Jika hak User Biasa, coba minta elevasi RunAs.
+:: - Jika prompt RunAs ditolak/gagal atau sistem tanpa RunAs, otomatis LANJUTKAN di sesi user biasa (jendela TIDAK AKAN langsung tertutup!).
 net session >nul 2>&1
 if "%errorlevel%"=="0" (
-    start powershell.exe -NoProfile -ExecutionPolicy Bypass -NoExit -File "%TARGET_PS%"
+    start "" powershell.exe -NoProfile -ExecutionPolicy Bypass -NoExit -File "%TARGET_PS%"
     exit /b 0
 ) else (
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process powershell.exe -ArgumentList '-NoProfile -ExecutionPolicy Bypass -NoExit -File \"\"%TARGET_PS%\"\"' -Verb RunAs"
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process powershell.exe -ArgumentList '-NoProfile -ExecutionPolicy Bypass -NoExit -File \"\"%TARGET_PS%\"\"' -Verb RunAs -ErrorAction Stop } catch { Start-Process powershell.exe -ArgumentList '-NoProfile -ExecutionPolicy Bypass -NoExit -File \"\"%TARGET_PS%\"\"' }"
     exit /b 0
 )
