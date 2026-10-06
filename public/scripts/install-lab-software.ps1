@@ -29,7 +29,7 @@
 #  20. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.16"
+$SCRIPT_CURRENT_VERSION = "3.3.17"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 20 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -1474,6 +1474,13 @@ function Setup-LaragonStack {
             $iniText = $iniText -replace '(?m)^\s*post_max_size\s*=.*$', 'post_max_size = 128M'
             $iniText = $iniText -replace '(?m)^\s*max_execution_time\s*=.*$', 'max_execution_time = 360'
 
+            # Sembunyikan E_DEPRECATED agar Composer & library internal tidak memunculkan output peringatan di PHP 8.4/8.5
+            if ($iniText -match '(?m)^\s*error_reporting\s*=') {
+                $iniText = $iniText -replace '(?m)^\s*error_reporting\s*=.*$', 'error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT'
+            } else {
+                $iniText += "`r`nerror_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT`r`n"
+            }
+
             [System.IO.File]::WriteAllText($pIni.FullName, $iniText)
         } catch {}
     }
@@ -1810,6 +1817,10 @@ function Setup-ComposerAndLaravel {
 
     if ($composerInstalled) {
         Write-Host "   [OK SUDAH TERPASANG] Composer terdeteksi di sistem." -ForegroundColor Green
+        # Perbarui file composer.phar ke build terbaru resmi agar 100% kompatibel dengan PHP 8.4/8.5
+        try {
+            & composer self-update --quiet --no-interaction 2>$null
+        } catch {}
         Write-Host "   -> Melewati instalasi Composer (Skip)." -ForegroundColor DarkGray
     } else {
         $composerInstaller = Get-ChildItem -Path $AppsDir -Filter "*Composer*.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -1893,6 +1904,13 @@ function Setup-ComposerAndLaravel {
                 $escapedExt = $extDir.Replace('\', '/')
                 $newIni = $newIni -replace '(?m)^\s*;?\s*extension_dir\s*=\s*"ext"', "extension_dir = `"$escapedExt`""
                 $newIni = $newIni -replace '(?m)^\s*;?\s*extension_dir\s*=\s*''ext''', "extension_dir = `"$escapedExt`""
+            }
+
+            # Sembunyikan E_DEPRECATED agar Composer & library internal tidak memunculkan output peringatan di PHP 8.4/8.5
+            if ($newIni -match '(?m)^\s*error_reporting\s*=') {
+                $newIni = $newIni -replace '(?m)^\s*error_reporting\s*=.*$', 'error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT'
+            } else {
+                $newIni += "`r`nerror_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT`r`n"
             }
 
             if ($iniContent -ne $newIni) {
@@ -2748,8 +2766,24 @@ function Test-LabSoftwareStatus {
             $trimmed = $raw.Trim()
             if (-not [string]::IsNullOrWhiteSpace($trimmed)) {
                 $lines = @($trimmed -split "`r?`n")
-                $cleanLines = @($lines | Where-Object { $_ -notmatch '(?i)warning:' -and -not [string]::IsNullOrWhiteSpace($_) })
-                $firstLine = if ($cleanLines.Count -gt 0) { [string]$cleanLines[0] } else { [string]$lines[0] }
+                # Filter out baris peringatan PHP / Deprecated notice agar hasil versi bersih dan elegan
+                $cleanLines = @($lines | Where-Object {
+                    $_ -notmatch '(?i)warning:' -and
+                    $_ -notmatch '(?i)deprecated:' -and
+                    $_ -notmatch '(?i)notice:' -and
+                    -not [string]::IsNullOrWhiteSpace($_)
+                })
+
+                # Jika memeriksa Composer, utamakan baris yang mengandung "Composer version"
+                $firstLine = $null
+                if ($chk.Name -eq "Composer") {
+                    $cMatch = $cleanLines | Where-Object { $_ -match '(?i)Composer (version|\d+\.)' } | Select-Object -First 1
+                    if ($cMatch) { $firstLine = $cMatch }
+                }
+                if (-not $firstLine) {
+                    $firstLine = if ($cleanLines.Count -gt 0) { [string]$cleanLines[0] } else { [string]$lines[0] }
+                }
+
                 Write-Host $firstLine.Trim() -ForegroundColor Green
             } else {
                 Write-Host "Belum Terdeteksi di PATH" -ForegroundColor Yellow
