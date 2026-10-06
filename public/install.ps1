@@ -29,7 +29,7 @@
 #  20. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.15"
+$SCRIPT_CURRENT_VERSION = "3.3.16"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 20 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -2036,69 +2036,41 @@ function Setup-VirtualBox {
                 if ($extPackFile -and (Test-Path $extPackFile.FullName) -and ($extPackFile.Length -gt 1048576)) {
                     Write-Host "   [i] Memasang Extension Pack secara otomatis: $($extPackFile.Name)..." -ForegroundColor Yellow
                     try {
-                        # Ambil hash lisensi resmi dari VBoxManage secara dinamis agar sesuai versi (7.0, 7.1, atau 7.2)
-                        $licHash = $null
-                        try {
-                            $licRaw = & $vboxManage extpack install --replace "$($extPackFile.FullName)" 2>&1 | Out-String
-                            if ($licRaw -match '--accept-license=([0-9a-fA-F]{32,64})') {
-                                $licHash = $matches[1]
-                            }
-                        } catch {}
-
-                        # Jika hash tidak ditemukan secara dinamis, gunakan daftar hash resmi VirtualBox yang umum
-                        $knownHashes = @(
-                            "33d7284dc4a0ece381196da3cfe3f45f8b94642b",
-                            "56da88705974ca89a3e4ea3834da9dda4f829e16",
-                            "b674970f720f43d68139059da3643cc2279ab1be"
-                        )
-                        $candidateHashes = @()
-                        if ($licHash) { $candidateHashes += $licHash }
-                        foreach ($kh in $knownHashes) {
-                            if ($candidateHashes -notcontains $kh) { $candidateHashes += $kh }
-                        }
-
                         $extInstalledSuccess = $false
-                        foreach ($h in $candidateHashes) {
-                            $installArgs = @("extpack", "install", "--replace", "$($extPackFile.FullName)", "--accept-license=$h")
-                            $p = Start-Process -FilePath $vboxManage -ArgumentList $installArgs -Wait -PassThru -NoNewWindow -ErrorAction SilentlyContinue
-                            if ($p -and $p.ExitCode -eq 0) {
-                                $extInstalledSuccess = $true
-                                break
+
+                        # Strategi 1: Eksekusi via CMD dengan piping 'echo y' (standar resmi paling andal untuk menyetujui lisensi interaktif VirtualBox)
+                        Write-Host "   [i] Menyetujui lisensi Oracle PUEL secara otomatis (Auto-Accept: Y)..." -ForegroundColor Cyan
+                        $cmdArgs = "/c `"(echo y) | `"$vboxManage`" extpack install --replace `"$($extPackFile.FullName)`"`""
+                        $p = Start-Process -FilePath "cmd.exe" -ArgumentList $cmdArgs -Wait -PassThru -NoNewWindow -ErrorAction SilentlyContinue
+
+                        if ($p -and $p.ExitCode -eq 0) {
+                            $extInstalledSuccess = $true
+                        } else {
+                            # Strategi 2: Ambil hash lisensi resmi dari VBoxManage secara dinamis
+                            $licRaw = & cmd.exe /c "`"$vboxManage`" extpack install --replace `"$($extPackFile.FullName)`"" 2>&1 | Out-String
+                            $candidateHashes = @(
+                                "33d7284dc4a0ece381196da3cfe3f45f8b94642b",
+                                "56da88705974ca89a3e4ea3834da9dda4f829e16",
+                                "b674970f720f43d68139059da3643cc2279ab1be"
+                            )
+                            if ($licRaw -match '--accept-license=([0-9a-fA-F]{32,64})') {
+                                $candidateHashes = @($matches[1]) + $candidateHashes
                             }
-                        }
 
-                        # Jika parameter hash ditolak atau tidak didukung, gunakan piped 'y' ke VBoxManage dengan batas waktu aman
-                        if (-not $extInstalledSuccess) {
-                            Write-Host "   [i] Memvalidasi lisensi dengan stream otomatis..." -ForegroundColor DarkYellow
-                            $si = New-Object System.Diagnostics.ProcessStartInfo
-                            $si.FileName = $vboxManage
-                            $si.Arguments = "extpack install --replace `"$($extPackFile.FullName)`""
-                            $si.UseShellExecute = $false
-                            $si.RedirectStandardInput = $true
-                            $si.RedirectStandardOutput = $true
-                            $si.RedirectStandardError = $true
-                            $si.CreateNoWindow = $true
-
-                            $proc = [System.Diagnostics.Process]::Start($si)
-                            $proc.StandardInput.WriteLine("y")
-                            $proc.StandardInput.Flush()
-                            $proc.StandardInput.Close()
-
-                            # Tunggu maksimal 15 detik agar proses tidak pernah menggantung (anti-stuck)
-                            $finished = $proc.WaitForExit(15000)
-                            if (-not $finished) {
-                                try { $proc.Kill() } catch {}
-                                Write-Host "   [!] Waktu pemasangan extension pack habis (dibatasi 15 detik agar tidak freeze)." -ForegroundColor DarkYellow
-                            } elseif ($proc.ExitCode -eq 0) {
-                                $extInstalledSuccess = $true
+                            foreach ($h in $candidateHashes) {
+                                $installArgs = @("extpack", "install", "--replace", "$($extPackFile.FullName)", "--accept-license=$h")
+                                $pHash = Start-Process -FilePath $vboxManage -ArgumentList $installArgs -Wait -PassThru -NoNewWindow -ErrorAction SilentlyContinue
+                                if ($pHash -and $pHash.ExitCode -eq 0) {
+                                    $extInstalledSuccess = $true
+                                    break
+                                }
                             }
                         }
 
                         if ($extInstalledSuccess) {
                             Write-Host "   [OK] Oracle VM VirtualBox Extension Pack berhasil dipasang!" -ForegroundColor Green
                         } else {
-                            Write-Host "   [i] Mendaftarkan ekstensi ke sistem Windows..." -ForegroundColor DarkGray
-                            Start-Process -FilePath $extPackFile.FullName -ErrorAction SilentlyContinue
+                            Write-Host "   [i] Lisensi Extension Pack dilewati (opsional untuk fitur USB 3.0/RDP)." -ForegroundColor DarkGray
                         }
                     } catch {
                         Write-Host "   [i] Melewati proses extension pack: $($_.Exception.Message)" -ForegroundColor DarkGray
