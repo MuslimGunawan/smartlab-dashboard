@@ -29,7 +29,7 @@
 #  20. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.17"
+$SCRIPT_CURRENT_VERSION = "3.3.18"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 20 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -2020,7 +2020,20 @@ function Setup-VirtualBox {
         if (Test-Path $vboxManage) {
             Write-Host "`n   [>>>] Memeriksa Oracle VM VirtualBox Extension Pack..." -ForegroundColor Cyan
             
-            # Cek apakah Extension Pack sudah terdaftar di VirtualBox
+            # Deteksi versi VirtualBox yang terpasang di sistem
+            $vboxVerDetected = $null
+            try {
+                $verOut = & $vboxManage --version 2>&1 | Out-String
+                if ($verOut -match '^(\d+\.\d+\.\d+)') {
+                    $vboxVerDetected = $matches[1]
+                }
+            } catch {}
+
+            if ($vboxVerDetected) {
+                Write-Host "   [i] Versi Oracle VM VirtualBox terdeteksi: $vboxVerDetected" -ForegroundColor Cyan
+            }
+
+            # Cek apakah Extension Pack sudah terdaftar dan cocok di VirtualBox
             $extInstalled = $false
             try {
                 $extList = & $vboxManage list extpacks 2>&1 | Out-String
@@ -2031,20 +2044,38 @@ function Setup-VirtualBox {
             } catch {}
 
             if (-not $extInstalled) {
+                # Bersihkan berkas extpack lama/salah jika versi berbeda atau berukuran corrupt
+                $existingPacks = Get-ChildItem -Path $AppsDir -Filter "*.vbox-extpack" -File -Recurse -ErrorAction SilentlyContinue
+                foreach ($ep in $existingPacks) {
+                    if ($vboxVerDetected -and ($ep.Name -notmatch [regex]::Escape($vboxVerDetected)) -and ($ep.Name -match '\d+\.\d+\.\d+')) {
+                        Write-Host "   [!] Menghapus cache Extension Pack yang tidak cocok dengan versi VBox ($($ep.Name))..." -ForegroundColor Yellow
+                        Remove-Item -Path $ep.FullName -Force -ErrorAction SilentlyContinue
+                    }
+                }
+
                 # Cari berkas offline .vbox-extpack di Apps/
                 $extPackFile = Get-ChildItem -Path $AppsDir -Filter "*.vbox-extpack" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 
                 if (-not $extPackFile -or ($extPackFile.Length -lt 1048576)) {
-                    Write-Host "   [i] Mengunduh Oracle VM VirtualBox Extension Pack (Google Drive Multi-Mirror)..." -ForegroundColor Yellow
-                    $extPackMirrors = @(
+                    Write-Host "   [i] Menyiapkan Oracle VM VirtualBox Extension Pack resmi sesuai versi..." -ForegroundColor Yellow
+                    
+                    # Bangun daftar mirror dinamis: prioritas utama adalah versi persis dari VirtualBox yang terpasang
+                    $extPackMirrors = @()
+                    if ($vboxVerDetected) {
+                        $extPackMirrors += "https://download.virtualbox.org/virtualbox/$vboxVerDetected/Oracle_VirtualBox_Extension_Pack-$vboxVerDetected.vbox-extpack"
+                    }
+                    $extPackMirrors += @(
+                        "https://download.virtualbox.org/virtualbox/7.1.8/Oracle_VirtualBox_Extension_Pack-7.1.8.vbox-extpack",
+                        "https://download.virtualbox.org/virtualbox/7.1.6/Oracle_VirtualBox_Extension_Pack-7.1.6.vbox-extpack",
+                        "https://download.virtualbox.org/virtualbox/7.2.20/Oracle_VirtualBox_Extension_Pack-7.2.20.vbox-extpack",
                         "https://drive.google.com/file/d/1g0Ut2twJy71GQ4b6-4Nj6_3e99WCxWFY/view?usp=sharing",
                         "https://drive.google.com/file/d/1T3LOPKLTCx6JP0IZYBrJKaVaiqawXv6c/view?usp=sharing",
                         "https://drive.google.com/file/d/1bL621GdJ7tN1e3_IAClmwyIdyd5HcVxb/view?usp=sharing",
-                        "https://drive.google.com/file/d/1dlEPu54jB1ai3McvksX15axwGONs64g-/view?usp=sharing",
-                        "https://download.virtualbox.org/virtualbox/7.2.20/Oracle_VirtualBox_Extension_Pack-7.2.20.vbox-extpack",
-                        "https://download.virtualbox.org/virtualbox/7.1.8/Oracle_VirtualBox_Extension_Pack-7.1.8.vbox-extpack"
+                        "https://drive.google.com/file/d/1dlEPu54jB1ai3McvksX15axwGONs64g-/view?usp=sharing"
                     )
-                    $destExtPack = Join-Path $AppsDir "Oracle_VirtualBox_Extension_Pack.vbox-extpack"
+
+                    $targetPackName = if ($vboxVerDetected) { "Oracle_VirtualBox_Extension_Pack-$vboxVerDetected.vbox-extpack" } else { "Oracle_VirtualBox_Extension_Pack.vbox-extpack" }
+                    $destExtPack = Join-Path $AppsDir $targetPackName
                     $dlExt = Download-FileWithFastMirrors -Urls $extPackMirrors -DestinationPath $destExtPack -ActivityTitle "Mengunduh Extension Pack"
                     if ($dlExt -and (Test-Path $destExtPack)) {
                         $extPackFile = Get-Item $destExtPack
@@ -2056,31 +2087,58 @@ function Setup-VirtualBox {
                     try {
                         $extInstalledSuccess = $false
 
-                        # Strategi 1: Eksekusi via CMD dengan piping 'echo y' (standar resmi paling andal untuk menyetujui lisensi interaktif VirtualBox)
+                        # Strategi 1: Eksekusi via CMD dengan piping 'echo y' (otomatis accept lisensi VirtualBox PUEL)
                         Write-Host "   [i] Menyetujui lisensi Oracle PUEL secara otomatis (Auto-Accept: Y)..." -ForegroundColor Cyan
-                        $cmdArgs = "/c `"(echo y) | `"$vboxManage`" extpack install --replace `"$($extPackFile.FullName)`"`""
-                        $p = Start-Process -FilePath "cmd.exe" -ArgumentList $cmdArgs -Wait -PassThru -NoNewWindow -ErrorAction SilentlyContinue
-
-                        if ($p -and $p.ExitCode -eq 0) {
+                        $installOut = & cmd.exe /c "(echo y) | `"$vboxManage`" extpack install --replace `"$($extPackFile.FullName)`"" 2>&1 | Out-String
+                        if ($LASTEXITCODE -eq 0 -or $installOut -match "successfully installed") {
                             $extInstalledSuccess = $true
                         } else {
-                            # Strategi 2: Ambil hash lisensi resmi dari VBoxManage secara dinamis
-                            $licRaw = & cmd.exe /c "`"$vboxManage`" extpack install --replace `"$($extPackFile.FullName)`"" 2>&1 | Out-String
-                            $candidateHashes = @(
-                                "33d7284dc4a0ece381196da3cfe3f45f8b94642b",
-                                "56da88705974ca89a3e4ea3834da9dda4f829e16",
-                                "b674970f720f43d68139059da3643cc2279ab1be"
-                            )
-                            if ($licRaw -match '--accept-license=([0-9a-fA-F]{32,64})') {
-                                $candidateHashes = @($matches[1]) + $candidateHashes
+                            # Jika gagal karena 'Not valid kernel code signature' atau 'E_FAIL', tandai berkas tidak kompatibel
+                            if ($installOut -match "Not valid kernel code signature" -or $installOut -match "E_FAIL") {
+                                Write-Host "   [!] Berkas Extension Pack ($($extPackFile.Name)) tidak cocok dengan kernel driver VirtualBox." -ForegroundColor Yellow
+                                Write-Host "   [!] Menghapus berkas yang tidak kompatibel dan mencoba versi alternatif..." -ForegroundColor Yellow
+                                Remove-Item -Path $extPackFile.FullName -Force -ErrorAction SilentlyContinue
+
+                                # Coba unduh versi cadangan stabil resmi
+                                $altUrls = @()
+                                if ($vboxVerDetected -and $vboxVerDetected -ne "7.1.8") {
+                                    $altUrls += "https://download.virtualbox.org/virtualbox/7.1.8/Oracle_VirtualBox_Extension_Pack-7.1.8.vbox-extpack"
+                                }
+                                if ($vboxVerDetected -and $vboxVerDetected -ne "7.1.6") {
+                                    $altUrls += "https://download.virtualbox.org/virtualbox/7.1.6/Oracle_VirtualBox_Extension_Pack-7.1.6.vbox-extpack"
+                                }
+                                $destAlt = Join-Path $AppsDir "Oracle_VirtualBox_Extension_Pack-Stable.vbox-extpack"
+                                $dlAlt = Download-FileWithFastMirrors -Urls $altUrls -DestinationPath $destAlt -ActivityTitle "Mengunduh Extension Pack Stabil"
+                                if ($dlAlt -and (Test-Path $destAlt)) {
+                                    Write-Host "   [i] Menguji pemasangan Extension Pack cadangan stabil..." -ForegroundColor Cyan
+                                    $altOut = & cmd.exe /c "(echo y) | `"$vboxManage`" extpack install --replace `"$destAlt`"" 2>&1 | Out-String
+                                    if ($LASTEXITCODE -eq 0 -or $altOut -match "successfully installed") {
+                                        $extInstalledSuccess = $true
+                                    }
+                                }
                             }
 
-                            foreach ($h in $candidateHashes) {
-                                $installArgs = @("extpack", "install", "--replace", "$($extPackFile.FullName)", "--accept-license=$h")
-                                $pHash = Start-Process -FilePath $vboxManage -ArgumentList $installArgs -Wait -PassThru -NoNewWindow -ErrorAction SilentlyContinue
-                                if ($pHash -and $pHash.ExitCode -eq 0) {
-                                    $extInstalledSuccess = $true
-                                    break
+                            if (-not $extInstalledSuccess) {
+                                # Strategi 2: Ambil hash lisensi resmi dari VBoxManage secara dinamis
+                                $candidateHashes = @(
+                                    "33d7284dc4a0ece381196da3cfe3f45f8b94642b",
+                                    "56da88705974ca89a3e4ea3834da9dda4f829e16",
+                                    "b674970f720f43d68139059da3643cc2279ab1be"
+                                )
+                                if ($installOut -match '--accept-license=([0-9a-fA-F]{32,64})') {
+                                    $candidateHashes = @($matches[1]) + $candidateHashes
+                                }
+
+                                foreach ($h in $candidateHashes) {
+                                    $targetToInstall = if ($extPackFile -and (Test-Path $extPackFile.FullName)) { $extPackFile.FullName } else { $destAlt }
+                                    if ($targetToInstall -and (Test-Path $targetToInstall)) {
+                                        $installArgs = @("extpack", "install", "--replace", "$targetToInstall", "--accept-license=$h")
+                                        $pHash = Start-Process -FilePath $vboxManage -ArgumentList $installArgs -Wait -PassThru -NoNewWindow -ErrorAction SilentlyContinue
+                                        if ($pHash -and $pHash.ExitCode -eq 0) {
+                                            $extInstalledSuccess = $true
+                                            break
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -2803,7 +2861,7 @@ function Test-LabSoftwareStatus {
         @{ Name = "Proteus Design Suite";Path = @("C:\Program Files*\Labcenter Electronics\Proteus *\BIN\PDS.EXE", "C:\Program Files (x86)\Labcenter Electronics\Proteus *\BIN\PDS.EXE"); Reg = "*Proteus*" },
         @{ Name = "Android Studio";      Path = @("C:\Program Files\Android\Android Studio\bin\studio64.exe", "C:\Program Files (x86)\Android\Android Studio\bin\studio64.exe", "C:\Users\*\AppData\Local\Programs\Android\Android Studio\bin\studio64.exe"); Reg = "*Android Studio*" },
         @{ Name = "Oracle VirtualBox";   Path = @("C:\Program Files\Oracle\VirtualBox\VirtualBox.exe", "C:\Program Files (x86)\Oracle\VirtualBox\VirtualBox.exe"); Reg = "*VirtualBox*" },
-        @{ Name = "VBox Extension Pack"; Path = @("C:\Program Files\Oracle\VirtualBox\ExtensionPacks\Oracle_VM_VirtualBox_Extension_Pack\ExtPack.xml"); Reg = "*VirtualBox Extension Pack*" },
+        @{ Name = "VBox Extension Pack"; Path = @("C:\Program Files\Oracle\VirtualBox\ExtensionPacks\*\ExtPack.xml", "C:\Program Files (x86)\Oracle\VirtualBox\ExtensionPacks\*\ExtPack.xml", "C:\Program Files\Oracle\VirtualBox\ExtensionPacks\Oracle_VM_VirtualBox_Extension_Pack\ExtPack.xml"); Reg = "*VirtualBox Extension Pack*" },
         @{ Name = "Apache NetBeans";     Path = @("C:\Program Files\*NetBeans*\netbeans\bin\netbeans*.exe", "C:\Program Files\*NetBeans*\bin\netbeans*.exe", "C:\Program Files\Apache NetBeans*\bin\netbeans*.exe", "C:\Program Files\Codelerity\*NetBeans*\bin\netbeans*.exe", "C:\Program Files (x86)\*NetBeans*\netbeans\bin\netbeans*.exe", "C:\Program Files (x86)\*NetBeans*\bin\netbeans*.exe", "$env:LOCALAPPDATA\Programs\*NetBeans*\bin\netbeans*.exe"); Reg = "*NetBeans*" },
         @{ Name = "QGIS Desktop";        Path = @("C:\Program Files\QGIS *\bin\qgis-bin.exe", "C:\Program Files\QGIS *\bin\qgis.exe"); Reg = "*QGIS*" },
         @{ Name = "Arduino IDE";         Path = @("C:\Program Files\Arduino IDE\Arduino IDE.exe", "C:\Program Files\Arduino\arduino.exe", "C:\Users\*\AppData\Local\Programs\Arduino IDE\Arduino IDE.exe", "C:\Users\*\AppData\Local\Arduino*\arduino*.exe", "C:\Program Files (x86)\Arduino\arduino.exe"); Reg = "*Arduino*" },
@@ -2843,6 +2901,25 @@ function Test-LabSoftwareStatus {
                     $found = "$($matchReg.DisplayName) ($($matchReg.DisplayVersion))"
                 }
             }
+        }
+
+        # Fallback Khusus: Jika memeriksa VBox Extension Pack, uji langsung via VBoxManage CLI
+        if (-not $found -and $gui.Name -eq "VBox Extension Pack") {
+            try {
+                $vboxCmd = $null
+                if (Test-Path "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe") { $vboxCmd = "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe" }
+                elseif (Test-Path "C:\Program Files (x86)\Oracle\VirtualBox\VBoxManage.exe") { $vboxCmd = "C:\Program Files (x86)\Oracle\VirtualBox\VBoxManage.exe" }
+                if ($vboxCmd) {
+                    $epCheck = & $vboxCmd list extpacks 2>&1 | Out-String
+                    if ($epCheck -match "Extension Packs:\s*([1-9]\d*)") {
+                        $pCount = $matches[1]
+                        $vMatch = if ($epCheck -match 'Version:\s*([^\r\n]+)') { $matches[1].Trim() } else { "Aktif" }
+                        $found = "Terdaftar di VirtualBox ($vMatch - $pCount Pack)"
+                    } elseif ($epCheck -match "Oracle VM VirtualBox Extension Pack") {
+                        $found = "Terdaftar di VirtualBox (Aktif)"
+                    }
+                }
+            } catch {}
         }
 
         # Fallback Tambahan: Periksa Shortcut di Start Menu Publik & User
