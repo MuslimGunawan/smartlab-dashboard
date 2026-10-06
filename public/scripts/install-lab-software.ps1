@@ -29,7 +29,7 @@
 #  20. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.19"
+$SCRIPT_CURRENT_VERSION = "3.3.20"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 20 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -2215,56 +2215,66 @@ function Setup-VirtualBox {
                     try {
                         $extInstalledSuccess = $false
 
-                        # Strategi 1: Eksekusi via CMD dengan piping 'echo y' (otomatis accept lisensi VirtualBox PUEL)
-                        Write-Host "   [i] Menyetujui lisensi Oracle PUEL secara otomatis (Auto-Accept: Y)..." -ForegroundColor Cyan
-                        $installOut = & cmd.exe /c "(echo y) | `"$vboxManage`" extpack install --replace `"$($extPackFile.FullName)`"" 2>&1 | Out-String
-                        if ($LASTEXITCODE -eq 0 -or $installOut -match "successfully installed") {
-                            $extInstalledSuccess = $true
-                        } else {
-                            # Jika gagal karena 'Not valid kernel code signature' atau 'E_FAIL', tandai berkas tidak kompatibel
-                            if ($installOut -match "Not valid kernel code signature" -or $installOut -match "E_FAIL") {
-                                Write-Host "   [!] Berkas Extension Pack ($($extPackFile.Name)) tidak cocok dengan kernel driver VirtualBox." -ForegroundColor Yellow
-                                Write-Host "   [!] Menghapus berkas yang tidak kompatibel dan mencoba versi alternatif..." -ForegroundColor Yellow
-                                Remove-Item -Path $extPackFile.FullName -Force -ErrorAction SilentlyContinue
-
-                                # Coba unduh versi cadangan stabil resmi
-                                $altUrls = @()
-                                if ($vboxVerDetected -and $vboxVerDetected -ne "7.1.8") {
-                                    $altUrls += "https://download.virtualbox.org/virtualbox/7.1.8/Oracle_VirtualBox_Extension_Pack-7.1.8.vbox-extpack"
-                                }
-                                if ($vboxVerDetected -and $vboxVerDetected -ne "7.1.6") {
-                                    $altUrls += "https://download.virtualbox.org/virtualbox/7.1.6/Oracle_VirtualBox_Extension_Pack-7.1.6.vbox-extpack"
-                                }
-                                $destAlt = Join-Path $AppsDir "Oracle_VirtualBox_Extension_Pack-Stable.vbox-extpack"
-                                $dlAlt = Download-FileWithFastMirrors -Urls $altUrls -DestinationPath $destAlt -ActivityTitle "Mengunduh Extension Pack Stabil"
-                                if ($dlAlt -and (Test-Path $destAlt)) {
-                                    Write-Host "   [i] Menguji pemasangan Extension Pack cadangan stabil..." -ForegroundColor Cyan
-                                    $altOut = & cmd.exe /c "(echo y) | `"$vboxManage`" extpack install --replace `"$destAlt`"" 2>&1 | Out-String
-                                    if ($LASTEXITCODE -eq 0 -or $altOut -match "successfully installed") {
-                                        $extInstalledSuccess = $true
-                                    }
-                                }
+                        # 1. Ambil hash lisensi resmi dari berkas extpack atau output query secara langsung
+                        $detectedLicenseHash = $null
+                        try {
+                            $checkLic = & cmd.exe /c "`"$vboxManage`" extpack install --replace `"$($extPackFile.FullName)`"" 2>&1 | Out-String
+                            if ($checkLic -match '--accept-license=([0-9a-fA-F]{32,64})') {
+                                $detectedLicenseHash = $matches[1]
+                                Write-Host "   [i] Hash lisensi PUEL resmi terdeteksi: $detectedLicenseHash" -ForegroundColor Cyan
                             }
+                        } catch {}
 
-                            if (-not $extInstalledSuccess) {
-                                # Strategi 2: Ambil hash lisensi resmi dari VBoxManage secara dinamis
-                                $candidateHashes = @(
-                                    "33d7284dc4a0ece381196da3cfe3f45f8b94642b",
-                                    "56da88705974ca89a3e4ea3834da9dda4f829e16",
-                                    "b674970f720f43d68139059da3643cc2279ab1be"
-                                )
-                                if ($installOut -match '--accept-license=([0-9a-fA-F]{32,64})') {
-                                    $candidateHashes = @($matches[1]) + $candidateHashes
-                                }
+                        # Kumpulan hash lisensi PUEL resmi (VirtualBox 7.0, 7.1, 7.2)
+                        $knownHashes = @(
+                            "33d7284dc4a0ece381196da3cfe3f45f8b94642b",
+                            "56da88705974ca89a3e4ea3834da9dda4f829e16",
+                            "b674970f720f43d68139059da3643cc2279ab1be",
+                            "10a1001452a7d86663f69f174ec62f31f95e841a",
+                            "78749a0783f0876f7f5292e4a3b7f607266feb4d"
+                        )
+                        if ($detectedLicenseHash) {
+                            $knownHashes = @($detectedLicenseHash) + $knownHashes
+                        }
 
-                                foreach ($h in $candidateHashes) {
-                                    $targetToInstall = if ($extPackFile -and (Test-Path $extPackFile.FullName)) { $extPackFile.FullName } else { $destAlt }
-                                    if ($targetToInstall -and (Test-Path $targetToInstall)) {
-                                        $installArgs = @("extpack", "install", "--replace", "$targetToInstall", "--accept-license=$h")
-                                        $pHash = Start-Process -FilePath $vboxManage -ArgumentList $installArgs -Wait -PassThru -NoNewWindow -ErrorAction SilentlyContinue
-                                        if ($pHash -and $pHash.ExitCode -eq 0) {
+                        # Strategi 1: Pasang dengan parameter resmi non-interaktif --accept-license=<hash>
+                        Write-Host "   [i] Menerapkan persetujuan lisensi PUEL otomatis (Mode Non-Interaktif)..." -ForegroundColor Cyan
+                        foreach ($h in $knownHashes) {
+                            $argsWithHash = @("extpack", "install", "--replace", "$($extPackFile.FullName)", "--accept-license=$h")
+                            $pHash = Start-Process -FilePath $vboxManage -ArgumentList $argsWithHash -Wait -PassThru -NoNewWindow -ErrorAction SilentlyContinue
+                            if ($pHash -and $pHash.ExitCode -eq 0) {
+                                $extInstalledSuccess = $true
+                                break
+                            }
+                        }
+
+                        # Strategi 2: Jika hash belum tembus, lakukan piping input interaktif 'echo y'
+                        if (-not $extInstalledSuccess) {
+                            Write-Host "   [i] Mengirimkan konfirmasi otomatis 'y' via Standard Input..." -ForegroundColor Cyan
+                            $installOut = & cmd.exe /c "(echo y & echo y) | `"$vboxManage`" extpack install --replace `"$($extPackFile.FullName)`"" 2>&1 | Out-String
+                            if ($LASTEXITCODE -eq 0 -or $installOut -match "successfully installed") {
+                                $extInstalledSuccess = $true
+                            } else {
+                                # Jika gagal karena ketidakcocokan driver kernel signature, unduh versi cadangan stabil
+                                if ($installOut -match "Not valid kernel code signature" -or $installOut -match "E_FAIL") {
+                                    Write-Host "   [!] Berkas Extension Pack ($($extPackFile.Name)) tidak cocok dengan kernel driver VirtualBox." -ForegroundColor Yellow
+                                    Write-Host "   [!] Menghapus berkas yang tidak kompatibel dan mencoba versi alternatif..." -ForegroundColor Yellow
+                                    Remove-Item -Path $extPackFile.FullName -Force -ErrorAction SilentlyContinue
+
+                                    $altUrls = @()
+                                    if ($vboxVerDetected -and $vboxVerDetected -ne "7.1.8") {
+                                        $altUrls += "https://download.virtualbox.org/virtualbox/7.1.8/Oracle_VirtualBox_Extension_Pack-7.1.8.vbox-extpack"
+                                    }
+                                    if ($vboxVerDetected -and $vboxVerDetected -ne "7.1.6") {
+                                        $altUrls += "https://download.virtualbox.org/virtualbox/7.1.6/Oracle_VirtualBox_Extension_Pack-7.1.6.vbox-extpack"
+                                    }
+                                    $destAlt = Join-Path $AppsDir "Oracle_VirtualBox_Extension_Pack-Stable.vbox-extpack"
+                                    $dlAlt = Download-FileWithFastMirrors -Urls $altUrls -DestinationPath $destAlt -ActivityTitle "Mengunduh Extension Pack Stabil"
+                                    if ($dlAlt -and (Test-Path $destAlt)) {
+                                        Write-Host "   [i] Menguji pemasangan Extension Pack cadangan stabil secara otomatis..." -ForegroundColor Cyan
+                                        $altOut = & cmd.exe /c "(echo y & echo y) | `"$vboxManage`" extpack install --replace `"$destAlt`"" 2>&1 | Out-String
+                                        if ($LASTEXITCODE -eq 0 -or $altOut -match "successfully installed") {
                                             $extInstalledSuccess = $true
-                                            break
                                         }
                                     }
                                 }
