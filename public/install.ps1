@@ -29,7 +29,7 @@
 #  20. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.18"
+$SCRIPT_CURRENT_VERSION = "3.3.19"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 20 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -817,13 +817,21 @@ function Install-AppSmart {
                 }
 
                 # Kode 0 = Sukses, 3010 = Sukses (Butuh restart), 1641 = Sukses reboot, 1223 = Elevated/UAC Success, 1638 = Versi sudah ada
-                if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010 -or $proc.ExitCode -eq 1641 -or $proc.ExitCode -eq 1223 -or $proc.ExitCode -eq 1638) {
+                $isExitSuccess = ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010 -or $proc.ExitCode -eq 1641 -or $proc.ExitCode -eq 1223 -or $proc.ExitCode -eq 1638)
+                
+                # Verifikasi langsung pada target CheckPath (beberapa installer seperti BitRock XAMPP mengembalikan exit code 1 saat selesai jika ada peringatan port/antivirus minor padahal file terpasang sempurna)
+                $foundCheck = $null
+                if ($CheckPath) {
+                    foreach ($cp in @($CheckPath)) {
+                        $f = Get-ChildItem -Path $cp -File -ErrorAction SilentlyContinue | Select-Object -First 1
+                        if ($f) { $foundCheck = $f; break }
+                    }
+                }
+
+                if ($isExitSuccess -or $foundCheck) {
                     Write-Host "[OK] Berhasil menginstal $Name dari folder Apps!" -ForegroundColor Green
-                    if ($CheckPath) {
-                        foreach ($cp in @($CheckPath)) {
-                            $f = Get-ChildItem -Path $cp -File -ErrorAction SilentlyContinue | Select-Object -First 1
-                            if ($f) { Create-AppShortcut -TargetExe $f.FullName -ShortcutName $Name; break }
-                        }
+                    if ($foundCheck) {
+                        Create-AppShortcut -TargetExe $foundCheck.FullName -ShortcutName $Name
                     }
                     Record-InstallResult -Name $Name -Status "BERHASIL DIINSTAL" -Keterangan "Terpasang dari offline Apps"
                     return
@@ -894,13 +902,19 @@ function Install-AppSmart {
                         $proc = Start-Process -FilePath $destFile -Wait -PassThru
                     }
                 }
-                if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010 -or $proc.ExitCode -eq 1641 -or $proc.ExitCode -eq 1223 -or $proc.ExitCode -eq 1638) {
+                $isMirrorExitSuccess = ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010 -or $proc.ExitCode -eq 1641 -or $proc.ExitCode -eq 1223 -or $proc.ExitCode -eq 1638)
+                $foundCheckMirror = $null
+                if ($CheckPath) {
+                    foreach ($cp in @($CheckPath)) {
+                        $f = Get-ChildItem -Path $cp -File -ErrorAction SilentlyContinue | Select-Object -First 1
+                        if ($f) { $foundCheckMirror = $f; break }
+                    }
+                }
+
+                if ($isMirrorExitSuccess -or $foundCheckMirror) {
                     Write-Host "[OK] Berhasil menginstal $Name!" -ForegroundColor Green
-                    if ($CheckPath) {
-                        foreach ($cp in @($CheckPath)) {
-                            $f = Get-ChildItem -Path $cp -File -ErrorAction SilentlyContinue | Select-Object -First 1
-                            if ($f) { Create-AppShortcut -TargetExe $f.FullName -ShortcutName $Name; break }
-                        }
+                    if ($foundCheckMirror) {
+                        Create-AppShortcut -TargetExe $foundCheckMirror.FullName -ShortcutName $Name
                     }
                     Record-InstallResult -Name $Name -Status "BERHASIL DIINSTAL" -Keterangan "Terunduh & terpasang via Mirror"
                     return
@@ -1484,7 +1498,69 @@ function Setup-LaragonStack {
             [System.IO.File]::WriteAllText($pIni.FullName, $iniText)
         } catch {}
     }
-    Write-Host "   [OK] Seluruh php.ini berhasil dikonfigurasi & ekstensi aktif sempurna!" -ForegroundColor Green
+    # 5.1 KONFIGURASI TEPAT SERVICE LARAGON (laragon.ini) AGAR TIDAK BENTROK PORT & SERVICE SIAP PAKAI
+    $usrLaragonIni = Join-Path $targetLaragon "usr\laragon.ini"
+    if (Test-Path $usrLaragonIni) {
+        try {
+            $lIniContent = [System.IO.File]::ReadAllText($usrLaragonIni)
+            
+            # Nonaktifkan Nginx bawaan Laragon (Use=0) agar port 80 & 443 hanya dipakai Apache
+            if ($lIniContent -match '\[nginx\]') {
+                $lIniContent = [System.Text.RegularExpressions.Regex]::Replace($lIniContent, '(?s)(\[nginx\][\r\n]+(?:(?!\[)[^\r\n]*[\r\n]+)*?Use\s*=\s*)-?1', '${1}0')
+            }
+            # Pastikan Apache dan MySQL aktif (Use=-1)
+            if ($lIniContent -match '\[apache\]') {
+                $lIniContent = [System.Text.RegularExpressions.Regex]::Replace($lIniContent, '(?s)(\[apache\][\r\n]+(?:(?!\[)[^\r\n]*[\r\n]+)*?Use\s*=\s*)0', '${1}-1')
+            }
+            if ($lIniContent -match '\[mysql\]') {
+                $lIniContent = [System.Text.RegularExpressions.Regex]::Replace($lIniContent, '(?s)(\[mysql\][\r\n]+(?:(?!\[)[^\r\n]*[\r\n]+)*?Use\s*=\s*)0', '${1}-1')
+            }
+            # Nonaktifkan PostgreSQL dan Memcached bawaan jika modulnya tidak lengkap agar tidak error merah
+            if ($lIniContent -match '\[postgresql\]') {
+                $lIniContent = [System.Text.RegularExpressions.Regex]::Replace($lIniContent, '(?s)(\[postgresql\][\r\n]+(?:(?!\[)[^\r\n]*[\r\n]+)*?Use\s*=\s*)-?1', '${1}0')
+            }
+            if ($lIniContent -match '\[memcached\]') {
+                $lIniContent = [System.Text.RegularExpressions.Regex]::Replace($lIniContent, '(?s)(\[memcached\][\r\n]+(?:(?!\[)[^\r\n]*[\r\n]+)*?Use\s*=\s*)-?1', '${1}0')
+            }
+
+            [System.IO.File]::WriteAllText($usrLaragonIni, $lIniContent)
+            Write-Host "   [OK] Konfigurasi C:\laragon\usr\laragon.ini dioptimalkan (Nginx dinonaktifkan dari port 80, Apache & MySQL siap)." -ForegroundColor Green
+        } catch {}
+    }
+
+    # 5.2 OPTIMASI PHPMYADMIN LARAGON (Hilangkan pesan merah 'configuration storage is not completely configured' & izinkan login root tanpa password)
+    $laragonPmaConfig = Join-Path $targetLaragon "etc\apps\phpMyAdmin\config.inc.php"
+    if (Test-Path $laragonPmaConfig) {
+        try {
+            $pmaContent = [System.IO.File]::ReadAllText($laragonPmaConfig)
+            $newPmaContent = $pmaContent
+
+            # Pastikan host = '127.0.0.1' agar tidak terjadi timeout IPv6 ::1 dan port = 3306
+            if ($newPmaContent -match "['`"]host['`"]\s*=") {
+                $newPmaContent = [System.Text.RegularExpressions.Regex]::Replace($newPmaContent, "(\['host'\]\s*=\s*['`"])[^'`"]*(['`"])", '${1}127.0.0.1${2}')
+            }
+            if ($newPmaContent -match "['`"]port['`"]\s*=") {
+                $newPmaContent = [System.Text.RegularExpressions.Regex]::Replace($newPmaContent, "(\['port'\]\s*=\s*['`"]?)[^'`"]*?(['`"]?;)", '${1}3306${2}')
+            }
+
+            # Aktifkan AllowNoPassword agar mahasiswa lab bisa login tanpa password
+            if ($newPmaContent -match "['`"]AllowNoPassword['`"]\s*=") {
+                $newPmaContent = [System.Text.RegularExpressions.Regex]::Replace($newPmaContent, "(\['AllowNoPassword'\]\s*=\s*)(?:false|0)", '${1}true')
+            }
+
+            # Sembunyikan notifikasi merah PmaNoRelation_DisableWarning
+            if ($newPmaContent -notmatch "PmaNoRelation_DisableWarning") {
+                $newPmaContent += "`r`n`$cfg['PmaNoRelation_DisableWarning'] = true;`r`n"
+            } else {
+                $newPmaContent = [System.Text.RegularExpressions.Regex]::Replace($newPmaContent, "(\['PmaNoRelation_DisableWarning'\]\s*=\s*)(?:false|0)", '${1}true')
+            }
+
+            if ($pmaContent -ne $newPmaContent) {
+                [System.IO.File]::WriteAllText($laragonPmaConfig, $newPmaContent)
+                Write-Host "   [OK] phpMyAdmin Laragon dikonfigurasi ke 127.0.0.1:3306 (Bebas peringatan konfigurasi storage)." -ForegroundColor Green
+            }
+        } catch {}
+    }
 
     # Kunci & Satukan seluruh ekosistem PHP ke versi terbaru dari Laragon
     Sync-UnifiedLaragonPhp
@@ -1621,13 +1697,38 @@ function Setup-XamppStack {
         "https://sourceforge.net/projects/xampp/files/XAMPP%20Windows/8.2.12/xampp-windows-x64-8.2.12-0-VS16-installer.exe/download"
     )
 
-    # 1. Jalankan Installer XAMPP (Unattended Silent Mode)
-    Install-AppSmart -Name "XAMPP" `
-                     -FilePattern "*xampp*.exe" `
-                     -DownloadUrls $xamppMirrors `
-                     -SilentArgs "--mode unattended" `
-                     -WingetId "ApacheFriends.Xampp.8.2" `
-                     -CheckPath @("C:\xampp\xampp-control.exe", "D:\xampp\xampp-control.exe")
+    $xamppPaths = @("C:\xampp\xampp-control.exe", "D:\xampp\xampp-control.exe")
+    $installedXampp = $null
+    foreach ($xp in $xamppPaths) {
+        if (Test-Path $xp) { $installedXampp = $xp; break }
+    }
+
+    # 1. Jalankan Installer XAMPP jika belum ada
+    if (-not $installedXampp) {
+        # Bersihkan folder C:\xampp kosong/rusak jika ada bekas instalasi gagal sebelumnya
+        if ((Test-Path "C:\xampp") -and -not (Test-Path "C:\xampp\xampp-control.exe")) {
+            $xItems = Get-ChildItem -Path "C:\xampp" -ErrorAction SilentlyContinue
+            if (-not $xItems -or $xItems.Count -eq 0) {
+                Remove-Item -Path "C:\xampp" -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        # Jalankan instalasi tanpa memulai service di akhir agar tidak bentrok
+        Install-AppSmart -Name "XAMPP" `
+                         -FilePattern "*xampp*.exe" `
+                         -DownloadUrls $xamppMirrors `
+                         -SilentArgs "--mode unattended --enable-components apache,mysql,phpmyadmin" `
+                         -WingetId "ApacheFriends.Xampp.8.2" `
+                         -CheckPath $xamppPaths
+
+        foreach ($xp in $xamppPaths) {
+            if (Test-Path $xp) { $installedXampp = $xp; break }
+        }
+    } else {
+        Write-Host "   [OK SUDAH TERPASANG] XAMPP Server terdeteksi di $installedXampp." -ForegroundColor Green
+        Create-AppShortcut -TargetExe $installedXampp -ShortcutName "XAMPP Control Panel"
+        Record-InstallResult -Name "XAMPP" -Status "SUDAH TERPASANG" -Keterangan "Terdeteksi aktif di sistem (Skip)"
+    }
 
     # 2. Atur Port Otomatis jika C:\xampp terpasang
     $xamppDir = "C:\xampp"
@@ -1688,33 +1789,60 @@ function Setup-XamppStack {
             }
         }
 
-        # D. Konfigurasi phpMyAdmin agar terhubung ke port 3307 XAMPP
+        # D. Konfigurasi phpMyAdmin agar terhubung ke port 3307 XAMPP via 127.0.0.1
         $pmaConfig = Join-Path $xamppDir "phpMyAdmin\config.inc.php"
         if (Test-Path $pmaConfig) {
             $pmaText = [System.IO.File]::ReadAllText($pmaConfig)
-            if ($pmaText -notmatch "['`"]port['`"]\s*=") {
-                $portLine = "`r`n`$cfg['Servers'][`$i]['port'] = '3307';`r`n"
-                [System.IO.File]::AppendAllText($pmaConfig, $portLine)
-                Write-Host "   [OK] phpMyAdmin XAMPP dikonfigurasi ke MySQL Port 3307" -ForegroundColor Green
+            $newPmaText = $pmaText
+
+            # Ganti host = 'localhost' -> '127.0.0.1' agar MySQL TCP port 3307 dapat terhubung langsung tanpa socket
+            if ($newPmaText -match "['`"]host['`"]\s*=") {
+                $newPmaText = [System.Text.RegularExpressions.Regex]::Replace($newPmaText, "(\['host'\]\s*=\s*['`"])[^'`"]*(['`"])", '${1}127.0.0.1${2}')
             } else {
-                $newPmaText = [System.Text.RegularExpressions.Regex]::Replace($pmaText, "(\['port'\]\s*=\s*['`"])[^'`"]*(['`"])", '${1}3307${2}')
-                if ($pmaText -ne $newPmaText) {
-                    [System.IO.File]::WriteAllText($pmaConfig, $newPmaText)
-                    Write-Host "   [OK] phpMyAdmin XAMPP diperbarui ke MySQL Port 3307" -ForegroundColor Green
-                }
+                $newPmaText += "`r`n`$cfg['Servers'][`$i]['host'] = '127.0.0.1';`r`n"
+            }
+
+            # Set port ke 3307
+            if ($newPmaText -notmatch "['`"]port['`"]\s*=") {
+                $newPmaText += "`r`n`$cfg['Servers'][`$i]['port'] = '3307';`r`n"
+            } else {
+                $newPmaText = [System.Text.RegularExpressions.Regex]::Replace($newPmaText, "(\['port'\]\s*=\s*['`"]?)[^'`"]*?(['`"]?;)", '${1}3307${2}')
+            }
+
+            # Izinkan login tanpa password
+            if ($newPmaText -match "['`"]AllowNoPassword['`"]\s*=") {
+                $newPmaText = [System.Text.RegularExpressions.Regex]::Replace($newPmaText, "(\['AllowNoPassword'\]\s*=\s*)(?:false|0)", '${1}true')
+            }
+
+            # Nonaktifkan warning konfigurasi storage
+            if ($newPmaText -notmatch "PmaNoRelation_DisableWarning") {
+                $newPmaText += "`r`n`$cfg['PmaNoRelation_DisableWarning'] = true;`r`n"
+            }
+
+            if ($pmaText -ne $newPmaText) {
+                [System.IO.File]::WriteAllText($pmaConfig, $newPmaText)
+                Write-Host "   [OK] phpMyAdmin XAMPP dikonfigurasi ke 127.0.0.1:3307" -ForegroundColor Green
             }
         }
 
-        # E. Sinkronisasi Port di XAMPP Control Panel config (xampp-control.ini)
+        # E. Sinkronisasi Port & URL Admin di XAMPP Control Panel config (xampp-control.ini)
         $xamppIni = Join-Path $xamppDir "xampp-control.ini"
         if (Test-Path $xamppIni) {
             $iniTxt = [System.IO.File]::ReadAllText($xamppIni)
+            
+            # Ganti alokasi port di [ServicePorts] dan [Ports]
             $newIniTxt = $iniTxt -replace '(?m)^Apache\s*=\s*(80|8080)\s*$', 'Apache = 8088'
             $newIniTxt = $newIniTxt -replace '(?m)^ApacheSSL\s*=\s*(443|8443)\s*$', 'ApacheSSL = 8444'
             $newIniTxt = $newIniTxt -replace '(?m)^MySQL\s*=\s*3306\s*$', 'MySQL = 3307'
+
+            # Ganti port bawaan di [BinaryNames] atau [Services] jika ada
+            $newIniTxt = $newIniTxt -replace '(?m)^PortApache\s*=\s*(80|8080)\s*$', 'PortApache = 8088'
+            $newIniTxt = $newIniTxt -replace '(?m)^PortSSL\s*=\s*(443|8443)\s*$', 'PortSSL = 8444'
+            $newIniTxt = $newIniTxt -replace '(?m)^PortMySQL\s*=\s*3306\s*$', 'PortMySQL = 3307'
+
             if ($iniTxt -ne $newIniTxt) {
                 [System.IO.File]::WriteAllText($xamppIni, $newIniTxt)
-                Write-Host "   [OK] Port pada XAMPP Control Panel disinkronkan ke 8088/8444/3307." -ForegroundColor Green
+                Write-Host "   [OK] Port pada XAMPP Control Panel disinkronkan ke 8088/8444/3307 (Pesan merah 'Port 80 in use' dihilangkan)." -ForegroundColor Green
             }
         }
 
