@@ -29,7 +29,7 @@
 #  20. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.14"
+$SCRIPT_CURRENT_VERSION = "3.3.15"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 20 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -101,13 +101,33 @@ try {
     Set-ExecutionPolicy RemoteSigned -Scope LocalMachine -Force -ErrorAction SilentlyContinue
 } catch {}
 
-# 1.3 Persiapan Sumber Winget (Cegah error sertifikat 0x8a15005e pada sumber msstore)
-try {
-    $sources = winget source list 2>$null | Out-String
-    if ($sources -match "msstore") {
-        winget source remove --name msstore 2>$null
+# 1.3 Deteksi Ketersediaan Winget & Penanganan Sumber (Cegah error sertifikat 0x8a15005e)
+function Test-WingetAvailable {
+    try {
+        $w = Get-Command winget.exe -ErrorAction SilentlyContinue
+        if (-not $w) {
+            $w = Get-Command winget -ErrorAction SilentlyContinue
+        }
+        if (-not $w) {
+            # Cek di folder WindowsApps lokal pengguna
+            $wPath = Get-ChildItem -Path "$env:LOCALAPPDATA\Microsoft\WindowsApps" -Filter "winget.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($wPath) { return $true }
+            return $false
+        }
+        return $true
+    } catch {
+        return $false
     }
-} catch {}
+}
+
+if (Test-WingetAvailable) {
+    try {
+        $sources = winget source list 2>$null | Out-String
+        if ($sources -match "msstore") {
+            winget source remove --name msstore 2>$null
+        }
+    } catch {}
+}
 
 # 2. Deteksi Lokasi Folder Installer Offline (Apps/)
 # Cerdas: Mendeteksi apakah script berada di dalam folder Apps, di samping folder Apps, atau di USB/Drive lain
@@ -893,10 +913,17 @@ function Install-AppSmart {
 
     # C. Jika tidak ada file offline di folder Apps, unduh & simpan ke Apps/ via Winget, lalu instal
     if (-not [string]::IsNullOrWhiteSpace($WingetId)) {
+        if (-not (Test-WingetAvailable)) {
+            Write-Host "   [i] Winget (Windows Package Manager) tidak terpasang di komputer ini." -ForegroundColor DarkYellow
+            Write-Host "       (Sistem mengandalkan file installer offline di folder Apps/ atau Direct CDN Mirror)." -ForegroundColor DarkGray
+            Record-InstallResult -Name $Name -Status "BELUM TERSEDIA" -Keterangan "Memerlukan file master offline di Apps/"
+            return
+        }
+
         Write-Host "[i] File offline belum ada di folder Apps. Mengunduh & menyimpan installer ke Apps/..." -ForegroundColor Yellow
         $wingetDownloadedSuccess = $false
         try {
-            winget download --id "$WingetId" --source winget -d "$AppsDir" --accept-package-agreements --accept-source-agreements --disable-interactivity
+            & winget download --id "$WingetId" --source winget -d "$AppsDir" --accept-package-agreements --accept-source-agreements --disable-interactivity 2>$null
             
             # Pasang dependensi offline jika ikut terunduh oleh winget ke folder Dependencies
             $depDir = Join-Path $AppsDir "Dependencies"
@@ -947,27 +974,36 @@ function Install-AppSmart {
                 }
             }
         } catch {
-            Write-Host "[!] Unduhan installer offline gagal, mencoba direct install..." -ForegroundColor Yellow
+            Write-Host "[!] Unduhan installer offline via Winget dilewati: $($_.Exception.Message)" -ForegroundColor DarkYellow
         }
         if ($wingetDownloadedSuccess) { return }
 
         # Fallback langsung install via Winget jika download bundle belum menyelesaikan install
-        $installed = winget list --id "$WingetId" --source winget 2>$null
-        if ($LASTEXITCODE -eq 0 -and $installed -match $WingetId) {
-            Write-Host "[OK] $Name sudah terinstal di sistem ini." -ForegroundColor Green
-            Record-InstallResult -Name $Name -Status "SUDAH TERPASANG" -Keterangan "Terdeteksi via Winget (Skip)"
-            return
-        }
+        try {
+            $installed = & winget list --id "$WingetId" --source winget 2>$null
+            if ($LASTEXITCODE -eq 0 -and $installed -match $WingetId) {
+                Write-Host "[OK] $Name sudah terinstal di sistem ini." -ForegroundColor Green
+                Record-InstallResult -Name $Name -Status "SUDAH TERPASANG" -Keterangan "Terdeteksi via Winget (Skip)"
+                return
+            }
 
-        $cmd = "winget install --id `"$WingetId`" --source winget -e --silent --accept-source-agreements --accept-package-agreements --disable-interactivity $WingetArgs"
-        Invoke-Expression $cmd
+            $wArgsList = @("install", "--id", "$WingetId", "--source", "winget", "-e", "--silent", "--accept-source-agreements", "--accept-package-agreements", "--disable-interactivity")
+            if (-not [string]::IsNullOrWhiteSpace($WingetArgs)) {
+                $extraW = Convert-ArgsToArray $WingetArgs
+                if ($extraW) { $wArgsList += $extraW }
+            }
+            $pWinget = Start-Process -FilePath "winget.exe" -ArgumentList $wArgsList -Wait -PassThru -NoNewWindow -ErrorAction SilentlyContinue
 
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "[OK] Berhasil menginstal $Name via Winget!" -ForegroundColor Green
-            Record-InstallResult -Name $Name -Status "BERHASIL DIINSTAL" -Keterangan "Terpasang via Winget Direct"
-        } else {
-            Write-Host "[!] Gagal menginstal $Name via Winget. Periksa koneksi internet." -ForegroundColor Red
-            Record-InstallResult -Name $Name -Status "GAGAL" -Keterangan "Winget error / offline"
+            if ($pWinget -and ($pWinget.ExitCode -eq 0 -or $pWinget.ExitCode -eq 3010)) {
+                Write-Host "[OK] Berhasil menginstal $Name via Winget!" -ForegroundColor Green
+                Record-InstallResult -Name $Name -Status "BERHASIL DIINSTAL" -Keterangan "Terpasang via Winget Direct"
+            } else {
+                Write-Host "[!] Pemasangan $Name via Winget tidak berhasil (Exit: $($pWinget.ExitCode))." -ForegroundColor DarkYellow
+                Record-InstallResult -Name $Name -Status "GAGAL" -Keterangan "Winget error / offline"
+            }
+        } catch {
+            Write-Host "[!] Eksekusi Winget gagal: $($_.Exception.Message)" -ForegroundColor DarkYellow
+            Record-InstallResult -Name $Name -Status "GAGAL" -Keterangan "Winget tidak tersedia"
         }
     } else {
         Write-Host "[!] File installer offline $Name ($FilePattern) belum ada di folder Apps/." -ForegroundColor Yellow
@@ -2000,17 +2036,72 @@ function Setup-VirtualBox {
                 if ($extPackFile -and (Test-Path $extPackFile.FullName) -and ($extPackFile.Length -gt 1048576)) {
                     Write-Host "   [i] Memasang Extension Pack secara otomatis: $($extPackFile.Name)..." -ForegroundColor Yellow
                     try {
-                        # Pasang dengan persetujuan lisensi otomatis (accept license)
-                        $p = Start-Process -FilePath $vboxManage -ArgumentList "extpack install --replace `"$($extPackFile.FullName)`" --accept-license=33d7284dc4a0ece381196da3cfe3f45f8b94642b`"" -Wait -PassThru -WindowStyle Hidden
-                        if ($p.ExitCode -eq 0) {
+                        # Ambil hash lisensi resmi dari VBoxManage secara dinamis agar sesuai versi (7.0, 7.1, atau 7.2)
+                        $licHash = $null
+                        try {
+                            $licRaw = & $vboxManage extpack install --replace "$($extPackFile.FullName)" 2>&1 | Out-String
+                            if ($licRaw -match '--accept-license=([0-9a-fA-F]{32,64})') {
+                                $licHash = $matches[1]
+                            }
+                        } catch {}
+
+                        # Jika hash tidak ditemukan secara dinamis, gunakan daftar hash resmi VirtualBox yang umum
+                        $knownHashes = @(
+                            "33d7284dc4a0ece381196da3cfe3f45f8b94642b",
+                            "56da88705974ca89a3e4ea3834da9dda4f829e16",
+                            "b674970f720f43d68139059da3643cc2279ab1be"
+                        )
+                        $candidateHashes = @()
+                        if ($licHash) { $candidateHashes += $licHash }
+                        foreach ($kh in $knownHashes) {
+                            if ($candidateHashes -notcontains $kh) { $candidateHashes += $kh }
+                        }
+
+                        $extInstalledSuccess = $false
+                        foreach ($h in $candidateHashes) {
+                            $installArgs = @("extpack", "install", "--replace", "$($extPackFile.FullName)", "--accept-license=$h")
+                            $p = Start-Process -FilePath $vboxManage -ArgumentList $installArgs -Wait -PassThru -NoNewWindow -ErrorAction SilentlyContinue
+                            if ($p -and $p.ExitCode -eq 0) {
+                                $extInstalledSuccess = $true
+                                break
+                            }
+                        }
+
+                        # Jika parameter hash ditolak atau tidak didukung, gunakan piped 'y' ke VBoxManage dengan batas waktu aman
+                        if (-not $extInstalledSuccess) {
+                            Write-Host "   [i] Memvalidasi lisensi dengan stream otomatis..." -ForegroundColor DarkYellow
+                            $si = New-Object System.Diagnostics.ProcessStartInfo
+                            $si.FileName = $vboxManage
+                            $si.Arguments = "extpack install --replace `"$($extPackFile.FullName)`""
+                            $si.UseShellExecute = $false
+                            $si.RedirectStandardInput = $true
+                            $si.RedirectStandardOutput = $true
+                            $si.RedirectStandardError = $true
+                            $si.CreateNoWindow = $true
+
+                            $proc = [System.Diagnostics.Process]::Start($si)
+                            $proc.StandardInput.WriteLine("y")
+                            $proc.StandardInput.Flush()
+                            $proc.StandardInput.Close()
+
+                            # Tunggu maksimal 15 detik agar proses tidak pernah menggantung (anti-stuck)
+                            $finished = $proc.WaitForExit(15000)
+                            if (-not $finished) {
+                                try { $proc.Kill() } catch {}
+                                Write-Host "   [!] Waktu pemasangan extension pack habis (dibatasi 15 detik agar tidak freeze)." -ForegroundColor DarkYellow
+                            } elseif ($proc.ExitCode -eq 0) {
+                                $extInstalledSuccess = $true
+                            }
+                        }
+
+                        if ($extInstalledSuccess) {
                             Write-Host "   [OK] Oracle VM VirtualBox Extension Pack berhasil dipasang!" -ForegroundColor Green
                         } else {
-                            # Fallback tanpa hash lisensi jika versi berbeda
-                            Write-Host "   [i] Mendaftarkan berkas extension pack ke sistem..." -ForegroundColor Cyan
+                            Write-Host "   [i] Mendaftarkan ekstensi ke sistem Windows..." -ForegroundColor DarkGray
                             Start-Process -FilePath $extPackFile.FullName -ErrorAction SilentlyContinue
                         }
                     } catch {
-                        Start-Process -FilePath $extPackFile.FullName -ErrorAction SilentlyContinue
+                        Write-Host "   [i] Melewati proses extension pack: $($_.Exception.Message)" -ForegroundColor DarkGray
                     }
                 } else {
                     Write-Host "   [!] Berkas Extension Pack belum siap diunduh (opsional untuk fitur USB 3.0/RDP)." -ForegroundColor Gray
@@ -2809,6 +2900,7 @@ function Run-FullInstallation {
 
     # 4. Visual Studio Code (Otomatis Silent dengan Direct CDN Mirror)
     $vscodeMirrors = @(
+        "https://vscode.download.prss.microsoft.com/dbazure/download/stable/fabdbac710c49742d1ae8f47303771f654f01f94/VSCodeUserSetup-x64-1.98.0.exe",
         "https://update.code.visualstudio.com/latest/win32-x64-user/stable",
         "https://az764295.vo.msecnd.net/stable/latest/VSCodeUserSetup-x64.exe"
     )
@@ -3004,7 +3096,11 @@ function Start-DownloadOnlyMaster {
             Name = "Visual Studio Code"
             FilePattern = @("*VSCode*Setup*.exe", "*code*setup*.exe")
             DestFile = "VSCodeUserSetup-x64.exe"
-            Urls = @("https://update.code.visualstudio.com/latest/win32-x64-user/stable", "https://az764295.vo.msecnd.net/stable/latest/VSCodeUserSetup-x64.exe")
+            Urls = @(
+                "https://vscode.download.prss.microsoft.com/dbazure/download/stable/fabdbac710c49742d1ae8f47303771f654f01f94/VSCodeUserSetup-x64-1.98.0.exe",
+                "https://update.code.visualstudio.com/latest/win32-x64-user/stable",
+                "https://az764295.vo.msecnd.net/stable/latest/VSCodeUserSetup-x64.exe"
+            )
         },
         @{
             Name = "Python (Versi Terbaru 3.13 / 3.12 with PIP)"
