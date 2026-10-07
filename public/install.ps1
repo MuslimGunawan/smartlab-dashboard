@@ -29,7 +29,7 @@
 #  20. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.23"
+$SCRIPT_CURRENT_VERSION = "3.3.24"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 20 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -3186,13 +3186,15 @@ function Run-FullInstallation {
 
     # 13. Arduino IDE (Arduino Uno, Nano, Mega, IoT)
     $arduinoMirrors = @(
+        "https://downloads.arduino.cc/arduino-ide/arduino-ide_2.3.10_Windows_64bit.msi",
+        "https://downloads.arduino.cc/arduino-ide/arduino-ide_2.3.10_Windows_64bit.exe",
         "https://github.com/arduino/arduino-ide/releases/download/2.3.10/arduino-ide_2.3.10_Windows_64bit.msi",
-        "https://downloads.arduino.cc/arduino-ide/arduino-ide_2.3.10_Windows_64bit.msi"
+        "https://github.com/arduino/arduino-ide/releases/download/2.3.10/arduino-ide_2.3.10_Windows_64bit.exe"
     )
     Install-AppSmart -Name "Arduino IDE" `
                      -FilePattern @("*arduino*.msi", "*arduino*.exe") `
                      -DownloadUrls $arduinoMirrors `
-                     -SilentArgs "/qn ALLUSERS=1" `
+                     -SilentArgs "/qn ALLUSERS=1 /S" `
                      -WingetId "ArduinoSA.IDE.stable" `
                      -CheckPath @("C:\Program Files\Arduino IDE\Arduino IDE.exe", "C:\Program Files\Arduino\arduino.exe", "C:\Users\*\AppData\Local\Programs\Arduino IDE\Arduino IDE.exe", "C:\Users\*\AppData\Local\Arduino*\arduino*.exe", "C:\Program Files (x86)\Arduino\arduino.exe")
     Wait-PacedStep
@@ -3410,7 +3412,12 @@ function Start-DownloadOnlyMaster {
             Name = "Arduino IDE"
             FilePattern = @("*arduino*.msi", "*arduino*.exe")
             DestFile = "arduino-ide_2.3.10_Windows_64bit.msi"
-            Urls = @("https://github.com/arduino/arduino-ide/releases/download/2.3.10/arduino-ide_2.3.10_Windows_64bit.msi", "https://downloads.arduino.cc/arduino-ide/arduino-ide_2.3.10_Windows_64bit.msi")
+            Urls = @(
+                "https://downloads.arduino.cc/arduino-ide/arduino-ide_2.3.10_Windows_64bit.msi",
+                "https://downloads.arduino.cc/arduino-ide/arduino-ide_2.3.10_Windows_64bit.exe",
+                "https://github.com/arduino/arduino-ide/releases/download/2.3.10/arduino-ide_2.3.10_Windows_64bit.msi",
+                "https://github.com/arduino/arduino-ide/releases/download/2.3.10/arduino-ide_2.3.10_Windows_64bit.exe"
+            )
         },
         @{
             Name = "Flutter SDK (Versi Terbaru 3.29/3.27 Stable)"
