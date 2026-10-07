@@ -2,7 +2,7 @@
 # SCRIPT OTOMASI INSTALASI SOFTWARE LABORATORIUM TEKNIK INFORMATIKA
 # UNIVERSITAS MALIKUSSALEH (UNIMAL)
 # ==============================================================================
-# Standarisasi 20 Software Praktikum Resmi Lab TI Unimal:
+# Standarisasi 21 Software Praktikum Resmi Lab TI Unimal:
 #
 # A. APLIKASI BERLISENSI (4):
 #   1. Delphi (Embarcadero Delphi / RAD Studio) -> Mode Interaktif (Pihak Ketiga)
@@ -10,28 +10,29 @@
 #   3. Microsoft Visual Studio 2022 Community
 #   4. Proteus Design Suite (Labcenter Electronics) -> Mode Interaktif (Pihak Ketiga)
 #
-# B. APLIKASI EKSTRAKSI, DEV STACK & BEBAS LISENSI (16):
+# B. APLIKASI EKSTRAKSI, BROWSER & DEV STACK (17):
 #   5. 7-Zip (High-Speed Archive Extractor)
 #   6. WinRAR (Lab Archive Support .rar/.zip)
-#   7. Git for Windows (Wajib untuk Dart SDK, Flutter, Composer, & VS Code)
-#   8. Visual Studio Code
-#   9. Android Studio
-#  10. Python (Versi Terbaru 3.13 / 3.12 LTS with PIP & System PATH)
-#  11. Java JDK 17 LTS (with JAVA_HOME & System PATH)
-#  12. Node.js LTS (Versi Terbaru v22 LTS with NPM & Global PATH)
-#  13. Flutter SDK (Versi Terbaru 3.29/3.27 Stable & Auto-Configured)
-#  14. Composer & Laravel Setup (Terkoneksi ke PHP Terbaru Laragon)
-#  15. Oracle VM VirtualBox
-#  16. Apache NetBeans IDE
-#  17. QGIS Desktop
-#  18. Arduino IDE (Arduino Uno & IoT)
-#  19. Laragon (WAMP Stack + Safe Modul)
-#  20. XAMPP Server (Port Anti-Bentrok)
+#   7. Google Chrome Enterprise (Browser Utama Lab & Engine Flutter Web)
+#   8. Git for Windows (Wajib untuk Dart SDK, Flutter, Composer, & VS Code)
+#   9. Visual Studio Code
+#  10. Android Studio
+#  11. Python (Versi Terbaru 3.13 / 3.12 LTS with PIP & System PATH)
+#  12. Java JDK 17 LTS (with JAVA_HOME & System PATH)
+#  13. Node.js LTS (Versi Terbaru v22 LTS with NPM & Global PATH)
+#  14. Flutter SDK (Versi Terbaru 3.29/3.27 Stable & Auto-Configured)
+#  15. Composer & Laravel Setup (Terkoneksi ke PHP Terbaru Laragon)
+#  16. Oracle VM VirtualBox
+#  17. Apache NetBeans IDE
+#  18. QGIS Desktop
+#  19. Arduino IDE (Arduino Uno & IoT)
+#  20. Laragon (WAMP Stack + Safe Modul)
+#  21. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.24"
+$SCRIPT_CURRENT_VERSION = "3.3.25"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$Host.UI.RawUI.WindowTitle = "Installer Otomatis 20 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
+$Host.UI.RawUI.WindowTitle = "Installer Otomatis 21 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
 # 1. Pastikan status Administrator terdeteksi dengan cerdas (Dukungan Mode Admin & Mode Pengguna Standar)
 function Test-Administrator {
@@ -1090,7 +1091,37 @@ function Setup-WinRAR {
     }
 }
 
-# 5.3. Fungsi Setup Git for Windows (Wajib untuk Dart SDK, Flutter, Composer, & VS Code)
+# 5.3. Fungsi Setup Google Chrome Enterprise (Browser Resmi Lab & Engine Flutter Web)
+function Setup-GoogleChrome {
+    $chromeMirrors = @(
+        "https://dl.google.com/tag/s/appguid%3D%7B8A69D345-D564-463C-AFF1-A69D9E530F96%7D%26iid%3D%7BADED07C9-40E0-4CB7-8055-2CA3BFD15EF0%7D%26browser%3D3%26usagestats%3D0%26appname%3DGoogle%2520Chrome%26needsadmin%3Dtrue%26ap%3Dx64-stable-statsdef_0%26brand%3DGCEA/dl/chrome/install/googlechromestandaloneenterprise64.msi",
+        "https://dl.google.com/chrome/install/googlechromestandaloneenterprise64.msi"
+    )
+    $chromePaths = @(
+        "C:\Program Files\Google\Chrome\Application\chrome.exe",
+        "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+    )
+
+    Install-AppSmart -Name "Google Chrome Enterprise" `
+                     -FilePattern @("*chrome*.msi", "*Chrome*.msi", "*chrome*.exe") `
+                     -DownloadUrls $chromeMirrors `
+                     -SilentArgs "/qn /norestart" `
+                     -WingetId "Google.Chrome" `
+                     -CheckPath $chromePaths
+
+    foreach ($cp in $chromePaths) {
+        if (Test-Path $cp) {
+            Set-SystemEnvVar -Name "CHROME_EXECUTABLE" -Value $cp
+            $env:CHROME_EXECUTABLE = $cp
+            Add-ToSystemPath -DirToAdd (Split-Path -Parent $cp)
+            Write-Host "   [OK] Google Chrome aktif & dikunci untuk Flutter Web: $cp" -ForegroundColor Green
+            break
+        }
+    }
+}
+
+# 5.4. Fungsi Setup Git for Windows (Wajib untuk Dart SDK, Flutter, Composer, & VS Code)
 function Setup-Git {
     $gitMirrors = @(
         "https://github.com/git-for-windows/git/releases/download/v2.48.1.windows.1/Git-2.48.1-64-bit.exe",
@@ -1272,9 +1303,9 @@ function Setup-LaragonStack {
                 Write-Host "   [OK] Installer Laragon berhasil diunduh dan disimpan di folder Apps/!" -ForegroundColor Green
             }
 
-            if (-not $laragonInstaller) {
+            if (-not $laragonInstaller -and (Test-WingetAvailable)) {
                 try {
-                    winget download --id "LeNgocKhoa.Laragon" --source winget -d "$AppsDir" --accept-package-agreements --accept-source-agreements --disable-interactivity
+                    & winget download --id "LeNgocKhoa.Laragon" --source winget -d "$AppsDir" --accept-package-agreements --accept-source-agreements --disable-interactivity 2>$null
                     $laragonInstaller = Get-ChildItem -Path $AppsDir -Filter "*laragon*.exe" -File -Recurse -ErrorAction SilentlyContinue | Where-Object {
                         $_.Name -ine "laragon.exe" -and $_.Name -notmatch "unins"
                     } | Select-Object -First 1
@@ -1304,11 +1335,12 @@ function Setup-LaragonStack {
             Stop-Job $killJob -Force -ErrorAction SilentlyContinue
             Remove-Job $killJob -Force -ErrorAction SilentlyContinue
             Get-Process -Name "laragon" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-        } else {
+        } elseif (Test-WingetAvailable) {
             Write-Host "   [i] Mencoba direct install Laragon via Winget..." -ForegroundColor Yellow
-            $cmd = "winget install --id `"LeNgocKhoa.Laragon`" --source winget -e --silent --accept-source-agreements --accept-package-agreements --disable-interactivity"
-            Invoke-Expression $cmd
-            Get-Process -Name "laragon" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            try {
+                & winget install --id "LeNgocKhoa.Laragon" --source winget -e --silent --accept-source-agreements --accept-package-agreements --disable-interactivity 2>$null
+                Get-Process -Name "laragon" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            } catch {}
         }
     }
 
@@ -1738,10 +1770,11 @@ function Setup-XamppStack {
         }
 
         # Jalankan instalasi tanpa memulai service di akhir agar tidak bentrok
+        # BitRock Installer unattended flag standar: --mode unattended
         Install-AppSmart -Name "XAMPP" `
                          -FilePattern "*xampp*.exe" `
                          -DownloadUrls $xamppMirrors `
-                         -SilentArgs "--mode unattended --enable-components apache,mysql,phpmyadmin" `
+                         -SilentArgs "--mode unattended" `
                          -WingetId "ApacheFriends.Xampp.8.2" `
                          -CheckPath $xamppPaths
 
@@ -2701,6 +2734,45 @@ function Setup-FlutterSDK {
         $env:ANDROID_HOME = $detectedSdk
         $env:ANDROID_SDK_ROOT = $detectedSdk
 
+        # B.0. Pastikan platform-tools (adb.exe) Terpasang (Kritis untuk Hilangkan Error Flutter Doctor: adb not found)
+        $adbExe = Join-Path $detectedSdk "platform-tools\adb.exe"
+        if (-not (Test-Path $adbExe)) {
+            Write-Host "   [i] Memeriksa Android SDK Platform-Tools (adb.exe)..." -ForegroundColor Yellow
+            $platToolsZipUrl = "https://dl.google.com/android/repository/platform-tools-latest-windows.zip"
+            $destPlatZip = Join-Path $AppsDir "platform-tools-latest-windows.zip"
+
+            $platZipFile = Get-ChildItem -Path $AppsDir -Filter "*platform-tools*.zip" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $platZipFile) {
+                Write-Host "   [>>>] Mengunduh official Google platform-tools (adb) dari Google CDN..." -ForegroundColor Cyan
+                $dlSuccess = Download-FileWithFastMirrors -Urls @($platToolsZipUrl) -DestinationPath $destPlatZip -ActivityTitle "Mengunduh Android platform-tools"
+                if ($dlSuccess -and (Test-Path $destPlatZip)) {
+                    $platZipFile = Get-Item $destPlatZip
+                }
+            }
+
+            if ($platZipFile) {
+                Write-Host "   [i] Memasang platform-tools ke $detectedSdk\platform-tools..." -ForegroundColor Yellow
+                $tempPlatDir = Join-Path $env:TEMP "android_plat_temp"
+                if (Test-Path $tempPlatDir) { Remove-Item -Path $tempPlatDir -Recurse -Force -ErrorAction SilentlyContinue }
+                New-Item -ItemType Directory -Path $tempPlatDir -Force | Out-Null
+
+                $extracted = Expand-LabArchive -ArchivePath $platZipFile.FullName -DestinationDir $tempPlatDir
+                $extractedPlat = Join-Path $tempPlatDir "platform-tools"
+                if (-not (Test-Path $extractedPlat)) {
+                    $extractedPlat = Get-ChildItem -Path $tempPlatDir -Directory -Recurse | Where-Object { Test-Path (Join-Path $_.FullName "adb.exe") } | Select-Object -First 1
+                    if ($extractedPlat) { $extractedPlat = $extractedPlat.FullName }
+                }
+
+                if ($extractedPlat -and (Test-Path $extractedPlat)) {
+                    $targetPlat = Join-Path $detectedSdk "platform-tools"
+                    if (-not (Test-Path $targetPlat)) { New-Item -ItemType Directory -Path $targetPlat -Force | Out-Null }
+                    & robocopy $extractedPlat $targetPlat /E /R:1 /W:1 /NP /NFL /NDL | Out-Null
+                    Write-Host "   [OK] Android platform-tools (adb.exe) berhasil dipasang sempurna!" -ForegroundColor Green
+                }
+                Remove-Item -Path $tempPlatDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
         $platTools = Join-Path $detectedSdk "platform-tools"
         if (Test-Path $platTools) { Add-ToSystemPath -DirToAdd $platTools }
 
@@ -2798,12 +2870,18 @@ function Setup-FlutterSDK {
         "C:\Program Files (x86)\Android\Android Studio",
         "$env:LOCALAPPDATA\Programs\Android Studio"
     )
+    $foundStudio = $false
     foreach ($asDir in $studioSearch) {
-        if (Test-Path $asDir) {
+        if ((Test-Path (Join-Path $asDir "bin\studio64.exe")) -or (Test-Path (Join-Path $asDir "bin\studio.exe"))) {
             & flutter config --android-studio-dir "$asDir" | Out-Null
             Write-Host "   [OK] Android Studio dikunci ke: $asDir" -ForegroundColor Green
+            $foundStudio = $true
             break
         }
+    }
+    if (-not $foundStudio) {
+        # Bersihkan config android-studio-dir jika foldernya tidak valid agar flutter doctor tidak error
+        & flutter config --android-studio-dir "" 2>$null | Out-Null
     }
 
     # E. Aktifkan platform desktop Windows, Web, dan Android
@@ -2992,6 +3070,7 @@ function Test-LabSoftwareStatus {
     $guiApps = @(
         @{ Name = "7-Zip";               Path = @("C:\Program Files\7-Zip\7z.exe", "C:\Program Files (x86)\7-Zip\7z.exe"); Reg = "*7-Zip*" },
         @{ Name = "WinRAR";              Path = @("C:\Program Files\WinRAR\WinRAR.exe", "C:\Program Files (x86)\WinRAR\WinRAR.exe"); Reg = "*WinRAR*" },
+        @{ Name = "Google Chrome";       Path = @("C:\Program Files\Google\Chrome\Application\chrome.exe", "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe", "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"); Reg = "*Google Chrome*" },
         @{ Name = "Git for Windows";     Path = @("C:\Program Files\Git\cmd\git.exe", "C:\Program Files\Git\bin\git.exe"); Reg = "*Git*" },
         @{ Name = "Delphi (RAD Studio)"; Path = @("C:\Program Files*\Embarcadero\Studio\*\bin\bds.exe", "C:\Program Files (x86)\Embarcadero\Studio\*\bin\bds.exe"); Reg = "*Delphi*" },
         @{ Name = "Cisco Packet Tracer"; Path = @("C:\Program Files\Cisco Packet Tracer *\bin\PacketTracer.exe", "C:\Program Files (x86)\Cisco Packet Tracer *\bin\PacketTracer.exe"); Reg = "*Packet Tracer*" },
@@ -3115,7 +3194,11 @@ function Run-FullInstallation {
     Setup-WinRAR
     Wait-PacedStep
 
-    # 3. Git for Windows (Wajib untuk Dart SDK, Flutter, Composer, & VS Code)
+    # 3. Google Chrome Enterprise (Browser Resmi Lab & Engine Flutter Web)
+    Setup-GoogleChrome
+    Wait-PacedStep
+
+    # 4. Git for Windows (Wajib untuk Dart SDK, Flutter, Composer, & VS Code)
     Setup-Git
     Wait-PacedStep
 
@@ -3252,7 +3335,7 @@ function Run-FullInstallation {
     Write-Host "==============================================================================" -ForegroundColor Green
     Write-Host "               SELESAI - REKAPITULASI STANDARISASI LAB TI                      " -ForegroundColor Green
     Write-Host "==============================================================================" -ForegroundColor Green
-    Write-Host "  Total Software Diproses   : $totalApps dari 19 Software Standar" -ForegroundColor White
+    Write-Host "  Total Software Diproses   : $totalApps dari 21 Software Standar" -ForegroundColor White
     Write-Host "  [OK] Berhasil / Terpasang : $berhasil Software" -ForegroundColor Green
     if ($menunggu -gt 0) {
         Write-Host "  [i] Menunggu Master Offline: $menunggu Software (Delphi / Proteus lisensi lab)" -ForegroundColor Yellow
@@ -3313,6 +3396,15 @@ function Start-DownloadOnlyMaster {
             FilePattern = @("rarreg.key")
             DestFile = "rarreg.key"
             Urls = @("https://gist.githubusercontent.com/MuhammadSaim/de84d1ca59952cf1efaa8c061aab81a1/raw/rarreg.key")
+        },
+        @{
+            Name = "Google Chrome Enterprise"
+            FilePattern = @("*chrome*.msi", "*Chrome*.msi", "*chrome*.exe")
+            DestFile = "googlechromestandaloneenterprise64.msi"
+            Urls = @(
+                "https://dl.google.com/tag/s/appguid%3D%7B8A69D345-D564-463C-AFF1-A69D9E530F96%7D%26iid%3D%7BADED07C9-40E0-4CB7-8055-2CA3BFD15EF0%7D%26browser%3D3%26usagestats%3D0%26appname%3DGoogle%2520Chrome%26needsadmin%3Dtrue%26ap%3Dx64-stable-statsdef_0%26brand%3DGCEA/dl/chrome/install/googlechromestandaloneenterprise64.msi",
+                "https://dl.google.com/chrome/install/googlechromestandaloneenterprise64.msi"
+            )
         },
         @{
             Name = "Git for Windows"
@@ -3676,7 +3768,7 @@ while ($running) {
     Clear-Host
     Show-SmartLabBanner
     Write-Host "Pilihan Tindakan:" -ForegroundColor Yellow
-    Write-Host " [1] Jalankan Otomasi Lengkap Lab (Instalasi & Standarisasi 20 Software)"
+    Write-Host " [1] Jalankan Otomasi Lengkap Lab (Instalasi & Standarisasi 21 Software)"
     Write-Host " [2] Unduh Seluruh Master Installer Offline ke Flashdisk (Download Saja / Cache Master)"
     Write-Host " [3] Verifikasi Status & Peta Port Software Lab"
     Write-Host " [4] Keluar`n"
