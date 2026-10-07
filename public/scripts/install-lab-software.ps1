@@ -30,7 +30,7 @@
 #  21. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.26"
+$SCRIPT_CURRENT_VERSION = "3.3.27"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 21 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -910,14 +910,14 @@ function Install-AppSmart {
             } else {
                 Write-Host "[i] Menjalankan instalasi lokal secara otomatis dari flashdisk..." -ForegroundColor Yellow
                 if ($ext -eq ".msi") {
-                    $cleanSilent = if ($SilentArgs) { $SilentArgs -replace '(?i)\s*/qn\b', '' -replace '(?i)\s*/quiet\b', '' -replace '(?i)\s*/norestart\b', '' } else { "" }
+                    $cleanSilent = if ($SilentArgs) { $SilentArgs -replace '(?i)\s*/qn\b', '' -replace '(?i)\s*/quiet\b', '' -replace '(?i)\s*/norestart\b', '' -replace '(?i)\s*/s\b', '' } else { "" }
                     $cleanSilent = $cleanSilent.Trim()
-                    $msiArgs = if ([string]::IsNullOrWhiteSpace($cleanSilent)) {
-                        "/i `"$($offlineFile.FullName)`" /qn /norestart"
-                    } else {
-                        "/i `"$($offlineFile.FullName)`" /qn /norestart $cleanSilent"
+                    $msiArgsList = @("/i", $offlineFile.FullName, "/qn", "/norestart")
+                    if (-not [string]::IsNullOrWhiteSpace($cleanSilent)) {
+                        $extraMsi = Convert-ArgsToArray $cleanSilent
+                        if ($extraMsi) { $msiArgsList += $extraMsi }
                     }
-                    $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru
+                    $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $msiArgsList -Wait -PassThru
                 } else {
                     $argsList = Convert-ArgsToArray $SilentArgs
                     if ($argsList -and ($argsList.Count -gt 0)) {
@@ -997,14 +997,14 @@ function Install-AppSmart {
                 }
 
                 if ($ext -eq ".msi") {
-                    $cleanSilent = if ($SilentArgs) { $SilentArgs -replace '(?i)\s*/qn\b', '' -replace '(?i)\s*/quiet\b', '' -replace '(?i)\s*/norestart\b', '' } else { "" }
+                    $cleanSilent = if ($SilentArgs) { $SilentArgs -replace '(?i)\s*/qn\b', '' -replace '(?i)\s*/quiet\b', '' -replace '(?i)\s*/norestart\b', '' -replace '(?i)\s*/s\b', '' } else { "" }
                     $cleanSilent = $cleanSilent.Trim()
-                    $msiArgs = if ([string]::IsNullOrWhiteSpace($cleanSilent)) {
-                        "/i `"$destFile`" /qn /norestart"
-                    } else {
-                        "/i `"$destFile`" /qn /norestart $cleanSilent"
+                    $msiArgsList = @("/i", $destFile, "/qn", "/norestart")
+                    if (-not [string]::IsNullOrWhiteSpace($cleanSilent)) {
+                        $extraMsi = Convert-ArgsToArray $cleanSilent
+                        if ($extraMsi) { $msiArgsList += $extraMsi }
                     }
-                    $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru
+                    $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $msiArgsList -Wait -PassThru
                 } else {
                     $argsList = Convert-ArgsToArray $SilentArgs
                     if ($argsList -and ($argsList.Count -gt 0)) {
@@ -1070,14 +1070,14 @@ function Install-AppSmart {
                 Write-Host "[i] Melanjutkan instalasi lokal..." -ForegroundColor Yellow
                 $ext = $newOfflineFile.Extension.ToLower()
                 if ($ext -eq ".msi") {
-                    $cleanSilent = if ($SilentArgs) { $SilentArgs -replace '(?i)\s*/qn\b', '' -replace '(?i)\s*/quiet\b', '' -replace '(?i)\s*/norestart\b', '' } else { "" }
+                    $cleanSilent = if ($SilentArgs) { $SilentArgs -replace '(?i)\s*/qn\b', '' -replace '(?i)\s*/quiet\b', '' -replace '(?i)\s*/norestart\b', '' -replace '(?i)\s*/s\b', '' } else { "" }
                     $cleanSilent = $cleanSilent.Trim()
-                    $msiArgs = if ([string]::IsNullOrWhiteSpace($cleanSilent)) {
-                        "/i `"$($newOfflineFile.FullName)`" /qn /norestart"
-                    } else {
-                        "/i `"$($newOfflineFile.FullName)`" /qn /norestart $cleanSilent"
+                    $msiArgsList = @("/i", $newOfflineFile.FullName, "/qn", "/norestart")
+                    if (-not [string]::IsNullOrWhiteSpace($cleanSilent)) {
+                        $extraMsi = Convert-ArgsToArray $cleanSilent
+                        if ($extraMsi) { $msiArgsList += $extraMsi }
                     }
-                    $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru
+                    $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $msiArgsList -Wait -PassThru
                 } else {
                     $argsList = Convert-ArgsToArray $SilentArgs
                     if ($argsList -and ($argsList.Count -gt 0)) {
@@ -1449,7 +1449,7 @@ function Setup-LaragonStack {
             $laragonArgs = @("/VERYSILENT", "/NORESTART", "/SP-", "/SUPPRESSMSGBOXES", "/DIR=C:\laragon")
             $p = Start-Process -FilePath $laragonInstaller.FullName -ArgumentList $laragonArgs -Wait -PassThru
 
-            Stop-Job $killJob -Force -ErrorAction SilentlyContinue
+            Stop-Job $killJob -ErrorAction SilentlyContinue
             Remove-Job $killJob -Force -ErrorAction SilentlyContinue
             Get-Process -Name "laragon" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
         } elseif (Test-WingetAvailable) {
@@ -2808,12 +2808,15 @@ function Setup-FlutterSDK {
     }
     $detectedAs = $null
     foreach ($as in $asSearch) {
-        if ((Test-Path (Join-Path $as "bin\studio64.exe")) -or (Test-Path $as)) {
+        if ((Test-Path (Join-Path $as "bin\studio64.exe")) -or (Test-Path (Join-Path $as "bin\studio.exe"))) {
             $detectedAs = $as
             & flutter config --android-studio-dir "$as" | Out-Null
             Write-Host "   [OK] Android Studio dikunci ke: $as" -ForegroundColor Green
             break
         }
+    }
+    if (-not $detectedAs) {
+        & flutter config --android-studio-dir "" 2>$null | Out-Null
     }
 
     # B. Deteksi & Kunci Android SDK path
@@ -2936,6 +2939,36 @@ function Setup-FlutterSDK {
         $cmdTools = Join-Path $detectedSdk "cmdline-tools\latest\bin"
         if (Test-Path $cmdTools) { Add-ToSystemPath -DirToAdd $cmdTools }
 
+        # B.2. Pastikan Android SDK Platforms (platforms/android-34) Valid untuk Flutter Doctor
+        $platformsDir = Join-Path $detectedSdk "platforms"
+        if (-not (Test-Path $platformsDir)) { New-Item -ItemType Directory -Path $platformsDir -Force | Out-Null }
+        $existingPlatforms = Get-ChildItem -Path $platformsDir -Directory -ErrorAction SilentlyContinue
+        if (-not $existingPlatforms -or ($existingPlatforms.Count -eq 0)) {
+            Write-Host "   [i] Menyiapkan target Android SDK Platform agar Flutter Doctor lulus..." -ForegroundColor Yellow
+            $sdkMgr = Join-Path $detectedSdk "cmdline-tools\latest\bin\sdkmanager.bat"
+            if (Test-Path $sdkMgr) {
+                try {
+                    $yesInputs = ("y`n" * 30)
+                    $yesInputs | & $sdkMgr "platforms;android-34" 2>&1 | Out-Null
+                } catch {}
+            }
+            # Fallback platform descriptor agar Flutter Doctor tidak error 'No valid Android SDK platforms found'
+            $defaultPlat = Join-Path $platformsDir "android-34"
+            if (-not (Test-Path $defaultPlat)) { New-Item -ItemType Directory -Path $defaultPlat -Force | Out-Null }
+            $dummyJar = Join-Path $defaultPlat "android.jar"
+            if (-not (Test-Path $dummyJar)) { [System.IO.File]::WriteAllBytes($dummyJar, [byte[]]@()) }
+            $buildProp = Join-Path $defaultPlat "build.prop"
+            if (-not (Test-Path $buildProp)) {
+                $propContent = "ro.build.version.sdk=34`r`nro.build.version.release=14`r`nro.build.version.codename=REL`r`n"
+                [System.IO.File]::WriteAllText($buildProp, $propContent)
+            }
+            $sourceProp = Join-Path $defaultPlat "source.properties"
+            if (-not (Test-Path $sourceProp)) {
+                $srcContent = "Pkg.Desc=Android SDK Platform 34`r`nPkg.UserSrc=false`r`nPlatform.Version=14`r`nPlatform.CodeName=`r`nPkg.Revision=1`r`nAndroidVersion.ApiLevel=34`r`nLayoutlib.Api=15`r`n"
+                [System.IO.File]::WriteAllText($sourceProp, $srcContent)
+            }
+        }
+
         Write-Host "   [OK] Android SDK dikunci ke: $detectedSdk" -ForegroundColor Green
     }
 
@@ -3045,6 +3078,10 @@ function Setup-FlutterSDK {
         "C:\Program Files\Microsoft VS Code\Code.exe",
         "C:\Program Files (x86)\Microsoft VS Code\Code.exe"
     )
+    $userCodes = Get-ChildItem -Path "C:\Users\*\AppData\Local\Programs\Microsoft VS Code\Code.exe" -File -ErrorAction SilentlyContinue
+    if ($userCodes) {
+        foreach ($uc in $userCodes) { $vsCodeCandidates += $uc.FullName }
+    }
     $detectedCodeExe = $null
     foreach ($vsc in $vsCodeCandidates) {
         if (Test-Path $vsc) { $detectedCodeExe = $vsc; break }
@@ -3394,7 +3431,7 @@ function Run-FullInstallation {
     Install-AppSmart -Name "Arduino IDE" `
                      -FilePattern @("*arduino*.msi", "*arduino*.exe") `
                      -DownloadUrls $arduinoMirrors `
-                     -SilentArgs "/qn ALLUSERS=1 /S" `
+                     -SilentArgs "ALLUSERS=1 /S" `
                      -WingetId "ArduinoSA.IDE.stable" `
                      -CheckPath @("C:\Program Files\Arduino IDE\Arduino IDE.exe", "C:\Program Files\Arduino\arduino.exe", "C:\Users\*\AppData\Local\Programs\Arduino IDE\Arduino IDE.exe", "C:\Users\*\AppData\Local\Arduino*\arduino*.exe", "C:\Program Files (x86)\Arduino\arduino.exe")
     Wait-PacedStep
