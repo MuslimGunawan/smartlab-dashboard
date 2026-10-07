@@ -29,7 +29,7 @@
 #  20. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.22"
+$SCRIPT_CURRENT_VERSION = "3.3.23"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 20 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -1042,6 +1042,18 @@ function Setup-7Zip {
 
 # 5.2. Fungsi Setup WinRAR (Lab Archive Support .rar/.zip)
 function Setup-WinRAR {
+    $keyFileInApps = Join-Path $AppsDir "rarreg.key"
+    if (-not (Test-Path $keyFileInApps)) {
+        Write-Host "   [i] Memeriksa lisensi registrasi WinRAR (rarreg.key)..." -ForegroundColor Cyan
+        try {
+            $rGist = Invoke-RestMethod -Uri "https://api.github.com/gists/de84d1ca59952cf1efaa8c061aab81a1" -Headers @{'User-Agent'='PowerShell'} -TimeoutSec 10 -ErrorAction SilentlyContinue
+            if ($rGist -and $rGist.files -and $rGist.files.'rarreg.key' -and $rGist.files.'rarreg.key'.content) {
+                [System.IO.File]::WriteAllText($keyFileInApps, $rGist.files.'rarreg.key'.content, [System.Text.Encoding]::UTF8)
+                Write-Host "   [OK] File registrasi rarreg.key berhasil disiapkan di folder Apps/!" -ForegroundColor Green
+            }
+        } catch {}
+    }
+
     $winRarMirrors = @(
         "https://www.rarlab.com/rar/winrar-x64-701.exe",
         "https://www.rarlab.com/rar/winrar-x64-700.exe"
@@ -1053,10 +1065,28 @@ function Setup-WinRAR {
                      -WingetId "RARLab.WinRAR" `
                      -CheckPath @("C:\Program Files\WinRAR\WinRAR.exe", "C:\Program Files (x86)\WinRAR\WinRAR.exe")
 
-    $winRarPath = "C:\Program Files\WinRAR"
-    if (Test-Path $winRarPath) {
-        Add-ToSystemPath -DirToAdd $winRarPath
-        if ($env:Path -notlike "*$winRarPath*") { $env:Path = "$winRarPath;" + $env:Path }
+    $winRarDirs = @(
+        "C:\Program Files\WinRAR",
+        "C:\Program Files (x86)\WinRAR",
+        "$env:APPDATA\WinRAR"
+    )
+
+    foreach ($dir in $winRarDirs) {
+        if (Test-Path $dir) {
+            Add-ToSystemPath -DirToAdd $dir
+            if ($env:Path -notlike "*$dir*") { $env:Path = "$dir;" + $env:Path }
+
+            # Salin rarreg.key jika tersedia di Apps/
+            if (Test-Path $keyFileInApps) {
+                try {
+                    $targetKey = Join-Path $dir "rarreg.key"
+                    if (-not (Test-Path $targetKey)) {
+                        Copy-Item -Path $keyFileInApps -Destination $targetKey -Force -ErrorAction SilentlyContinue
+                        Write-Host "   [OK] Lisensi registrasi rarreg.key berhasil diterapkan ke $dir!" -ForegroundColor Green
+                    }
+                } catch {}
+            }
+        }
     }
 }
 
@@ -3275,6 +3305,12 @@ function Start-DownloadOnlyMaster {
             FilePattern = @("*winrar*x64*.exe", "*winrar*.exe", "*wrar*.exe")
             DestFile = "winrar-x64-701.exe"
             Urls = @("https://www.rarlab.com/rar/winrar-x64-701.exe", "https://www.rarlab.com/rar/winrar-x64-700.exe")
+        },
+        @{
+            Name = "WinRAR License (rarreg.key)"
+            FilePattern = @("rarreg.key")
+            DestFile = "rarreg.key"
+            Urls = @("https://gist.githubusercontent.com/MuhammadSaim/de84d1ca59952cf1efaa8c061aab81a1/raw/rarreg.key")
         },
         @{
             Name = "Git for Windows"
