@@ -364,13 +364,14 @@ function Convert-ArgsToArray([string]$arguments) {
     return $list
 }
 
-# 4.2. Helper Pembuat Shortcut Desktop & Start Menu (Agar Aplikasi Muncul di Pencarian Windows)
+# 4.2. Helper Pembuat Shortcut Desktop & Start Menu (Desktop Bersih: Hanya GUI Utama, Start Menu Tetap Lengkap)
 function Create-AppShortcut {
     param (
         [string]$TargetExe,
         [string]$ShortcutName,
         [string]$WorkingDir = "",
-        [string]$Arguments = ""
+        [string]$Arguments = "",
+        [switch]$StartMenuOnly
     )
     if (-not (Test-Path $TargetExe)) { return }
     if ([string]::IsNullOrWhiteSpace($WorkingDir)) {
@@ -393,8 +394,35 @@ function Create-AppShortcut {
             [Environment]::GetFolderPath("Programs")
         }
 
-        # 1. Desktop
-        if (Test-Path $desktopDir) {
+        # 1. Desktop: HANYA untuk aplikasi GUI utama praktikum lab (Cegah desktop kotor / duplikat)
+        # Runtime/CLI/SDK (Node.js, JDK, Git, Python, 7-Zip, dll.) HANYA ke Start Menu/Search, tidak ke Desktop
+        $allowedDesktopApps = @(
+            "Visual Studio Code",
+            "Oracle VM VirtualBox",
+            "Oracle VirtualBox",
+            "Cisco Packet Tracer",
+            "Apache NetBeans",
+            "Android Studio",
+            "Arduino IDE",
+            "QGIS Desktop",
+            "Google Chrome",
+            "Google Chrome Enterprise",
+            "Laragon",
+            "XAMPP Control Panel",
+            "Embarcadero Delphi",
+            "Proteus Design Suite",
+            "Visual Studio 2022"
+        )
+
+        $isAllowedOnDesktop = (-not $StartMenuOnly) -and ($allowedDesktopApps -contains $ShortcutName -or ($allowedDesktopApps | Where-Object { $ShortcutName -like "*$_*" }))
+
+        # Larang keras CLI / runtime / arsip berada di Desktop publik/user
+        $blockedFromDesktop = @("Java", "JDK", "Node", "Git", "7-Zip", "7z", "Python", "Driver Easy", "Extras", "Composer")
+        if ($blockedFromDesktop | Where-Object { $ShortcutName -like "*$_*" }) {
+            $isAllowedOnDesktop = $false
+        }
+
+        if ($isAllowedOnDesktop -and (Test-Path $desktopDir)) {
             $lnk1 = Join-Path $desktopDir "$ShortcutName.lnk"
             $sc1 = $wsh.CreateShortcut($lnk1)
             $sc1.TargetPath = $TargetExe
@@ -403,7 +431,7 @@ function Create-AppShortcut {
             $sc1.Save()
         }
 
-        # 2. Start Menu Program (Muncul saat Windows Search / Start Menu diketik)
+        # 2. Start Menu Program (SELALU dibuat agar aplikasi muncul saat Windows Search / Start Menu diketik)
         if (Test-Path $programsDir) {
             $lnk2 = Join-Path $programsDir "$ShortcutName.lnk"
             $sc2 = $wsh.CreateShortcut($lnk2)
@@ -413,6 +441,94 @@ function Create-AppShortcut {
             $sc2.Save()
         }
     } catch {}
+}
+
+# 4.2.0. Helper Pembersih Shortcut Desktop Lab (Menghapus Duplikat & Icon CLI/SDK yang Mengotori Desktop)
+function Clean-LabDesktopIcons {
+    Write-Host "`n   [>>>] Mengoptimalkan & merapikan ikon Desktop Lab TI..." -ForegroundColor Cyan
+
+    $desktopDirs = @(
+        [Environment]::GetFolderPath("CommonDesktopDirectory"),
+        [Environment]::GetFolderPath("Desktop"),
+        "C:\Users\Public\Desktop"
+    )
+    if ($env:USERPROFILE) {
+        $desktopDirs += (Join-Path $env:USERPROFILE "Desktop")
+        $desktopDirs += (Join-Path $env:USERPROFILE "OneDrive\Desktop")
+    }
+    $desktopDirs = $desktopDirs | Select-Object -Unique | Where-Object { Test-Path $_ }
+
+    # 1. Ikon yang TIDAK BOLEH ada di Desktop (Hanya boleh di Start Menu / System PATH / Pencarian Windows)
+    $clutterPatterns = @(
+        "*Git Bash*.lnk",
+        "*Git GUI*.lnk",
+        "*Git for Windows*.lnk",
+        "*7-Zip*.lnk",
+        "*7z*.lnk",
+        "*Node.js*.lnk",
+        "*Nodejs*.lnk",
+        "*Java JDK*.lnk",
+        "*OpenJDK*.lnk",
+        "*Temurin*.lnk",
+        "*Driver Easy*.lnk",
+        "*Extras*.lnk",
+        "*Python*.lnk",
+        "*Composer*.lnk"
+    )
+
+    foreach ($dir in $desktopDirs) {
+        foreach ($pattern in $clutterPatterns) {
+            $junkFiles = Get-ChildItem -Path $dir -Filter $pattern -File -ErrorAction SilentlyContinue
+            foreach ($jf in $junkFiles) {
+                try {
+                    Remove-Item -Path $jf.FullName -Force -ErrorAction SilentlyContinue
+                    Write-Host "   [x] Menghapus ikon latar/CLI dari desktop: $($jf.Name)" -ForegroundColor DarkGray
+                } catch {}
+            }
+        }
+    }
+
+    # 2. Tangani DUPLIKAT Oracle VirtualBox pada Desktop
+    # Jika kedua shortcut ada ("Oracle VM VirtualBox.lnk" dan "Oracle VirtualBox.lnk"), simpan HANYA satu ("Oracle VM VirtualBox.lnk")
+    foreach ($dir in $desktopDirs) {
+        $vboxLnk1 = Join-Path $dir "Oracle VM VirtualBox.lnk"
+        $vboxLnk2 = Join-Path $dir "Oracle VirtualBox.lnk"
+        if ((Test-Path $vboxLnk1) -and (Test-Path $vboxLnk2)) {
+            Remove-Item -Path $vboxLnk2 -Force -ErrorAction SilentlyContinue
+            Write-Host "   [x] Menghapus duplikat shortcut: Oracle VirtualBox.lnk (Menyimpan Oracle VM VirtualBox.lnk)" -ForegroundColor DarkGray
+        }
+    }
+
+    # 3. Tangani DUPLIKAT Cisco Packet Tracer pada Desktop
+    foreach ($dir in $desktopDirs) {
+        $ciscoLnks = Get-ChildItem -Path $dir -Filter "*Packet*Tracer*.lnk" -File -ErrorAction SilentlyContinue
+        if ($ciscoLnks -and $ciscoLnks.Count -gt 1) {
+            # Pertahankan satu saja yang berukuran valid
+            $keep = $ciscoLnks[0]
+            for ($i = 1; $i -lt $ciscoLnks.Count; $i++) {
+                Remove-Item -Path $ciscoLnks[$i].FullName -Force -ErrorAction SilentlyContinue
+                Write-Host "   [x] Menghapus duplikat shortcut: $($ciscoLnks[$i].Name)" -ForegroundColor DarkGray
+            }
+        }
+    }
+
+    # 4. Refresh icon cache desktop Windows agar perubahan langsung tampak
+    try {
+        $code = @"
+using System;
+using System.Runtime.InteropServices;
+public class ShellRefresh {
+    [DllImport("shell32.dll")]
+    public static extern void SHChangeNotify(int wEventId, uint uFlags, IntPtr dwItem1, IntPtr dwItem2);
+}
+"@
+        if (-not ([System.Management.Automation.PSTypeName]'ShellRefresh').Type) {
+            Add-Type -TypeDefinition $code -ErrorAction SilentlyContinue
+        }
+        [ShellRefresh]::SHChangeNotify(0x08000000, 0x0000, [IntPtr]::Zero, [IntPtr]::Zero)
+    } catch {}
+
+    Write-Host "   [OK] Desktop tertata rapi! Hanya aplikasi GUI praktikum utama yang tampil di layar." -ForegroundColor Green
 }
 
 # 4.2.1. Helper Ekstraksi Otomatis Arsip (ZIP, RAR, 7Z) dengan Multi-Extractor
@@ -1162,12 +1278,12 @@ function Setup-Git {
         if (Test-Path $gitBin) { Add-ToSystemPath -DirToAdd $gitBin }
         if (Test-Path $gitUsrBin) { Add-ToSystemPath -DirToAdd $gitUsrBin }
 
-        # Buat Pintasan Start Menu & Desktop resmi agar langsung muncul di Pencarian Windows
+        # Buat Pintasan Start Menu resmi agar langsung muncul di Pencarian Windows (StartMenuOnly agar desktop bersih)
         if (Test-Path $gitBashExe) {
-            Create-AppShortcut -TargetExe $gitBashExe -ShortcutName "Git Bash"
+            Create-AppShortcut -TargetExe $gitBashExe -ShortcutName "Git Bash" -StartMenuOnly
         }
         if (Test-Path $gitGuiExe) {
-            Create-AppShortcut -TargetExe $gitGuiExe -ShortcutName "Git GUI"
+            Create-AppShortcut -TargetExe $gitGuiExe -ShortcutName "Git GUI" -StartMenuOnly
         }
 
         # Daftarkan ke Windows App Paths agar bisa dipanggil langsung dari Run (Win+R) git.exe
@@ -3319,7 +3435,9 @@ function Run-FullInstallation {
 
     # 20. Proteus Design Suite (Pihak Ketiga / Interaktif)
     Install-AppSmart -Name "Proteus Design Suite" -FilePattern "*proteus*.exe" -IsInteractive -CheckPath @("C:\Program Files*\Labcenter Electronics\Proteus *\BIN\PDS.EXE", "C:\Program Files (x86)\Labcenter Electronics\Proteus *\BIN\PDS.EXE")
-    Wait-PacedStep
+    # 21. Bersihkan & rapikan Desktop (Hapus duplikat dan icon background CLI/runtime)
+    Clean-LabDesktopIcons
+    Wait-PacedStep -Seconds 1
 
     # ==============================================================================
     # RANGKUMAN LENGKAP HASIL STANDARISASI LABORATORIUM
@@ -3776,9 +3894,10 @@ while ($running) {
     Write-Host " [1] Jalankan Otomasi Lengkap Lab (Instalasi & Standarisasi 21 Software)"
     Write-Host " [2] Unduh Seluruh Master Installer Offline ke Flashdisk (Download Saja / Cache Master)"
     Write-Host " [3] Verifikasi Status & Peta Port Software Lab"
-    Write-Host " [4] Keluar`n"
+    Write-Host " [4] Rapikan & Bersihkan Shortcut Desktop Lab (Hapus duplikat & icon CLI)"
+    Write-Host " [5] Keluar`n"
 
-    $choice = Read-Host "Masukkan pilihan Anda (1/2/3/4)"
+    $choice = Read-Host "Masukkan pilihan Anda (1/2/3/4/5)"
 
     switch ($choice) {
         "1" {
@@ -3807,6 +3926,12 @@ while ($running) {
             Wait-EnterOnly -PromptMessage "[Tekan tombol ENTER untuk kembali ke Menu Utama...]"
         }
         "4" {
+            Clear-Host
+            Show-SmartLabBanner
+            Clean-LabDesktopIcons
+            Wait-EnterOnly -PromptMessage "[Tekan tombol ENTER untuk kembali ke Menu Utama...]"
+        }
+        "5" {
             Write-Host "`n[i] Mengembalikan pengaturan daya komputer ke normal..." -ForegroundColor DarkGray
             try { [SystemPowerKeeper]::RestoreNormal() } catch {}
             Write-Host "Keluar dari skrip otomasi SmartLab. Terima kasih." -ForegroundColor Green
@@ -3815,7 +3940,7 @@ while ($running) {
             [System.Environment]::Exit(0)
         }
         default {
-            Write-Host "Pilihan tidak valid. Silakan ketik angka 1, 2, 3, atau 4." -ForegroundColor Red
+            Write-Host "Pilihan tidak valid. Silakan ketik angka 1, 2, 3, 4, atau 5." -ForegroundColor Red
             Start-Sleep -Seconds 1
         }
     }
