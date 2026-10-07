@@ -30,7 +30,7 @@
 #  21. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.28"
+$SCRIPT_CURRENT_VERSION = "3.3.29"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 21 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -1728,6 +1728,38 @@ function Setup-LaragonStack {
         } catch {}
     }
 
+    # 5.1.0 PERBAIKI MODUL FASTCGI (fcgid.conf) AGAR APACHE TIDAK ERROR SAAT START
+    $fcgidConf = Join-Path $targetLaragon "etc\apache2\fcgid.conf"
+    if (Test-Path $fcgidConf) {
+        try {
+            $fcgidText = [System.IO.File]::ReadAllText($fcgidConf)
+            $modulesDir = Join-Path $targetLaragon "etc\apache2\modules"
+            
+            # Cari modul mod_fcgid yang tersedia di folder modules
+            $availFcgid = Get-ChildItem -Path $modulesDir -Filter "*fcgid*.so" -File -ErrorAction SilentlyContinue |
+                          Sort-Object { if ($_.Name -eq "mod_fcgid.so") { 100 } else { $_.Length } } -Descending |
+                          Select-Object -First 1
+
+            if ($availFcgid) {
+                # Pastikan mod_fcgid.so standar tersedia (buat copy jika belum ada)
+                $standardSo = Join-Path $modulesDir "mod_fcgid.so"
+                if (-not (Test-Path $standardSo)) {
+                    Copy-Item $availFcgid.FullName -Destination $standardSo -Force -ErrorAction SilentlyContinue
+                }
+                # Normalkan baris LoadModule fcgid_module
+                $newFcgidText = $fcgidText -replace '(?m)^LoadModule\s+fcgid_module\s+.*$', 'LoadModule fcgid_module "C:/laragon/etc/apache2/modules/mod_fcgid.so"'
+                if ($fcgidText -ne $newFcgidText) {
+                    [System.IO.File]::WriteAllText($fcgidConf, $newFcgidText)
+                    Write-Host "   [OK] Memperbaiki konfigurasi LoadModule fcgid.conf Laragon." -ForegroundColor Green
+                }
+            } else {
+                # Jika tidak ada binary mod_fcgid sama sekali, komentari baris LoadModule agar Apache tetap bisa jalan normal
+                $newFcgidText = $fcgidText -replace '(?m)^LoadModule\s+fcgid_module', '#LoadModule fcgid_module'
+                [System.IO.File]::WriteAllText($fcgidConf, $newFcgidText)
+            }
+        } catch {}
+    }
+
     # 5.1.1 PASTIKAN VHOST DEFAULT (00-default.conf) MENGACU LENGKAP KE C:\laragon\www DENGAN SERVERNAME localhost
     $defaultVhostConf = Join-Path $targetLaragon "etc\apache2\sites-enabled\00-default.conf"
     if (Test-Path $defaultVhostConf) {
@@ -2066,9 +2098,21 @@ function Setup-XamppStack {
             $newIniTxt = $newIniTxt -replace '(?m)^PortSSL\s*=\s*(443|8443)\s*$', 'PortSSL = 8444'
             $newIniTxt = $newIniTxt -replace '(?m)^PortMySQL\s*=\s*3306\s*$', 'PortMySQL = 3307'
 
+            # Pastikan tombol Admin di XAMPP membuka alamat dengan port 8088 secara eksplisit
+            if ($newIniTxt -match '(?m)^ApacheAdminURL\s*=') {
+                $newIniTxt = $newIniTxt -replace '(?m)^ApacheAdminURL\s*=.*$', 'ApacheAdminURL = http://localhost:8088/dashboard/'
+            } else {
+                $newIniTxt = $newIniTxt -replace '(?m)(\[UserConfigs\])', "`$1`r`nApacheAdminURL = http://localhost:8088/dashboard/"
+            }
+            if ($newIniTxt -match '(?m)^MySQLAdminURL\s*=') {
+                $newIniTxt = $newIniTxt -replace '(?m)^MySQLAdminURL\s*=.*$', 'MySQLAdminURL = http://localhost:8088/phpmyadmin/'
+            } else {
+                $newIniTxt = $newIniTxt -replace '(?m)(\[UserConfigs\])', "`$1`r`nMySQLAdminURL = http://localhost:8088/phpmyadmin/"
+            }
+
             if ($iniTxt -ne $newIniTxt) {
                 [System.IO.File]::WriteAllText($xamppIni, $newIniTxt)
-                Write-Host "   [OK] Port pada XAMPP Control Panel disinkronkan ke 8088/8444/3307 (Pesan merah 'Port 80 in use' dihilangkan)." -ForegroundColor Green
+                Write-Host "   [OK] Port pada XAMPP Control Panel disinkronkan ke 8088/8444/3307 & Admin diarahkan ke localhost:8088." -ForegroundColor Green
             }
         }
 
