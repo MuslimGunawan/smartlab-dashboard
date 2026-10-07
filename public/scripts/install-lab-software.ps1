@@ -29,7 +29,7 @@
 #  20. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.21"
+$SCRIPT_CURRENT_VERSION = "3.3.22"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 20 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -104,17 +104,11 @@ try {
 # 1.3 Deteksi Ketersediaan Winget & Penanganan Sumber (Cegah error sertifikat 0x8a15005e)
 function Test-WingetAvailable {
     try {
-        $w = Get-Command winget.exe -ErrorAction SilentlyContinue
-        if (-not $w) {
-            $w = Get-Command winget -ErrorAction SilentlyContinue
+        $testOut = & winget --version 2>&1 | Out-String
+        if ($LASTEXITCODE -eq 0 -and $testOut -match '^\s*v?\d+\.\d+' -and $testOut -notmatch 'No applicable app licenses found') {
+            return $true
         }
-        if (-not $w) {
-            # Cek di folder WindowsApps lokal pengguna
-            $wPath = Get-ChildItem -Path "$env:LOCALAPPDATA\Microsoft\WindowsApps" -Filter "winget.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($wPath) { return $true }
-            return $false
-        }
-        return $true
+        return $false
     } catch {
         return $false
     }
@@ -3144,7 +3138,10 @@ function Run-FullInstallation {
     Wait-PacedStep
 
     # 11. QGIS Desktop (Otomatis Silent)
-    $qgisMirrors = @("https://qgis.org/downloads/QGIS-OSGeo4W-3.34.14-1.msi")
+    $qgisMirrors = @(
+        "https://download.osgeo.org/qgis/windows/QGIS-OSGeo4W-3.34.14-1.msi",
+        "https://qgis.org/downloads/QGIS-OSGeo4W-3.34.14-1.msi"
+    )
     Install-AppSmart -Name "QGIS Desktop" `
                      -FilePattern "*QGIS*.msi" `
                      -DownloadUrls $qgisMirrors `
@@ -3368,7 +3365,10 @@ function Start-DownloadOnlyMaster {
             Name = "QGIS Desktop"
             FilePattern = @("*QGIS*.msi")
             DestFile = "QGIS-OSGeo4W-3.34.14-1.msi"
-            Urls = @("https://qgis.org/downloads/QGIS-OSGeo4W-3.34.14-1.msi")
+            Urls = @(
+                "https://download.osgeo.org/qgis/windows/QGIS-OSGeo4W-3.34.14-1.msi",
+                "https://qgis.org/downloads/QGIS-OSGeo4W-3.34.14-1.msi"
+            )
         },
         @{
             Name = "Arduino IDE"
