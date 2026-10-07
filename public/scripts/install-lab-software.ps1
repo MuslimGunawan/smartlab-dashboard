@@ -1056,8 +1056,9 @@ function Setup-WinRAR {
     }
 
     $winRarMirrors = @(
-        "https://www.rarlab.com/rar/winrar-x64-701.exe",
-        "https://www.rarlab.com/rar/winrar-x64-700.exe"
+        "https://www.rarlab.com/rar/winrar-x64-723.exe",
+        "https://www.win-rar.com/fileadmin/winrar-versions/winrar/winrar-x64-723.exe",
+        "https://www.rarlab.com/rar/winrar-x64-701.exe"
     )
     Install-AppSmart -Name "WinRAR" `
                      -FilePattern @("*winrar*x64*.exe", "*winrar*.exe", "*wrar*.exe") `
@@ -3386,10 +3387,14 @@ function Start-DownloadOnlyMaster {
             Urls = @("https://www.7-zip.org/a/7z2408-x64.exe", "https://github.com/ip7z/7zip/releases/download/24.08/7z2408-x64.exe")
         },
         @{
-            Name = "WinRAR (Lab Archive Support)"
+            Name = "WinRAR 7.23 (Lab Archive Support)"
             FilePattern = @("*winrar*x64*.exe", "*winrar*.exe", "*wrar*.exe")
-            DestFile = "winrar-x64-701.exe"
-            Urls = @("https://www.rarlab.com/rar/winrar-x64-701.exe", "https://www.rarlab.com/rar/winrar-x64-700.exe")
+            DestFile = "winrar-x64-723.exe"
+            Urls = @(
+                "https://www.rarlab.com/rar/winrar-x64-723.exe",
+                "https://www.win-rar.com/fileadmin/winrar-versions/winrar/winrar-x64-723.exe",
+                "https://www.rarlab.com/rar/winrar-x64-701.exe"
+            )
         },
         @{
             Name = "WinRAR License (rarreg.key)"
