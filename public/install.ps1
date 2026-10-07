@@ -30,7 +30,7 @@
 #  21. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.27"
+$SCRIPT_CURRENT_VERSION = "3.3.28"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 21 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -488,7 +488,24 @@ function Clean-LabDesktopIcons {
         }
     }
 
-    # 2. Tangani DUPLIKAT Oracle VirtualBox pada Desktop
+    # 2. Tangani DUPLIKAT Lintas Desktop (Public Desktop vs User Desktop)
+    # Jika shortcut dengan nama yang sama (misal Cisco Packet Tracer, Google Chrome, VirtualBox) ada di Common/Public Desktop dan User Desktop,
+    # hapus yang di User Desktop agar tidak tampil ganda di layar pengguna Windows!
+    $commonDesktop = [Environment]::GetFolderPath("CommonDesktopDirectory")
+    $userDesktop = [Environment]::GetFolderPath("Desktop")
+    if ($commonDesktop -and $userDesktop -and (Test-Path $commonDesktop) -and (Test-Path $userDesktop) -and ($commonDesktop -ne $userDesktop)) {
+        $commonLnks = Get-ChildItem -Path $commonDesktop -Filter "*.lnk" -File -ErrorAction SilentlyContinue
+        foreach ($cl in $commonLnks) {
+            # Hapus jika ada nama yang sama persis di User Desktop
+            $dupUserLnk = Join-Path $userDesktop $cl.Name
+            if (Test-Path $dupUserLnk) {
+                Remove-Item -Path $dupUserLnk -Force -ErrorAction SilentlyContinue
+                Write-Host "   [x] Menghapus duplikat user desktop: $($cl.Name)" -ForegroundColor DarkGray
+            }
+        }
+    }
+
+    # 3. Tangani DUPLIKAT Oracle VirtualBox pada Desktop
     # Jika kedua shortcut ada ("Oracle VM VirtualBox.lnk" dan "Oracle VirtualBox.lnk"), simpan HANYA satu ("Oracle VM VirtualBox.lnk")
     foreach ($dir in $desktopDirs) {
         $vboxLnk1 = Join-Path $dir "Oracle VM VirtualBox.lnk"
@@ -499,7 +516,7 @@ function Clean-LabDesktopIcons {
         }
     }
 
-    # 3. Tangani DUPLIKAT Cisco Packet Tracer pada Desktop
+    # 4. Tangani DUPLIKAT Cisco Packet Tracer pada Desktop
     foreach ($dir in $desktopDirs) {
         $ciscoLnks = Get-ChildItem -Path $dir -Filter "*Packet*Tracer*.lnk" -File -ErrorAction SilentlyContinue
         if ($ciscoLnks -and $ciscoLnks.Count -gt 1) {
@@ -509,6 +526,16 @@ function Clean-LabDesktopIcons {
                 Remove-Item -Path $ciscoLnks[$i].FullName -Force -ErrorAction SilentlyContinue
                 Write-Host "   [x] Menghapus duplikat shortcut: $($ciscoLnks[$i].Name)" -ForegroundColor DarkGray
             }
+        }
+    }
+
+    # 5. Tangani DUPLIKAT Google Chrome pada Desktop ("Google Chrome.lnk" vs "Google Chrome Enterprise.lnk")
+    foreach ($dir in $desktopDirs) {
+        $chromeLnk1 = Join-Path $dir "Google Chrome.lnk"
+        $chromeLnk2 = Join-Path $dir "Google Chrome Enterprise.lnk"
+        if ((Test-Path $chromeLnk1) -and (Test-Path $chromeLnk2)) {
+            Remove-Item -Path $chromeLnk2 -Force -ErrorAction SilentlyContinue
+            Write-Host "   [x] Menghapus duplikat shortcut: Google Chrome Enterprise.lnk (Menyimpan Google Chrome.lnk)" -ForegroundColor DarkGray
         }
     }
 
@@ -1701,6 +1728,20 @@ function Setup-LaragonStack {
         } catch {}
     }
 
+    # 5.1.1 PASTIKAN VHOST DEFAULT (00-default.conf) MENGACU LENGKAP KE C:\laragon\www DENGAN SERVERNAME localhost
+    $defaultVhostConf = Join-Path $targetLaragon "etc\apache2\sites-enabled\00-default.conf"
+    if (Test-Path $defaultVhostConf) {
+        try {
+            $defVhostText = [System.IO.File]::ReadAllText($defaultVhostConf)
+            if ($defVhostText -notmatch '(?i)ServerName\s+localhost') {
+                $newDefVhost = $defVhostText -replace '(?m)<VirtualHost _default_:80>', "<VirtualHost _default_:80>`r`n    ServerName localhost`r`n    DocumentRoot `"C:/laragon/www`""
+                $newDefVhost = $newDefVhost -replace '(?m)<VirtualHost _default_:443>', "<VirtualHost _default_:443>`r`n    ServerName localhost`r`n    DocumentRoot `"C:/laragon/www`""
+                [System.IO.File]::WriteAllText($defaultVhostConf, $newDefVhost)
+                Write-Host "   [OK] Apache 00-default.conf dikonfigurasi ke localhost -> C:\laragon\www" -ForegroundColor Green
+            }
+        } catch {}
+    }
+
     # 5.2 OPTIMASI PHPMYADMIN LARAGON (Hilangkan pesan merah 'configuration storage is not completely configured' & izinkan login root tanpa password)
     $laragonPmaConfig = Join-Path $targetLaragon "etc\apps\phpMyAdmin\config.inc.php"
     if (Test-Path $laragonPmaConfig) {
@@ -1737,6 +1778,17 @@ function Setup-LaragonStack {
 
     # Kunci & Satukan seluruh ekosistem PHP ke versi terbaru dari Laragon
     Sync-UnifiedLaragonPhp
+
+    # 6. Jalankan Laragon otomatis jika belum berjalan agar service Apache & MySQL langsung aktif
+    if (Test-Path $laragonExe) {
+        $laragonProc = Get-Process -Name "laragon" -ErrorAction SilentlyContinue
+        if (-not $laragonProc) {
+            Write-Host "   [i] Memulai Laragon di latar belakang agar web server langsung siap..." -ForegroundColor Yellow
+            try {
+                Start-Process -FilePath $laragonExe -WorkingDirectory "C:\laragon" -WindowStyle Minimized -ErrorAction SilentlyContinue
+            } catch {}
+        }
+    }
 
     Record-InstallResult -Name "Laragon" -Status "BERHASIL DIINSTAL" -Keterangan "Laragon + Custom Stack Siap"
 }
