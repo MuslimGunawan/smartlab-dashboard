@@ -30,7 +30,7 @@
 #  21. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.25"
+$SCRIPT_CURRENT_VERSION = "3.3.26"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 21 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
