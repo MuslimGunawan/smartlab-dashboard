@@ -31,7 +31,7 @@
 #  22. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.31"
+$SCRIPT_CURRENT_VERSION = "3.4.0"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 22 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -4057,6 +4057,198 @@ function Start-DownloadOnlyMaster {
     }
     Write-Host "==============================================================================" -ForegroundColor Green
     Write-Host "Flashdisk Anda kini telah dilengkapi master offline untuk seluruh lab!`n" -ForegroundColor Green
+# ==============================================================================
+# MENU 2: INSTALASI KUSTOM / PILIHAN DENGAN PAKET KETERKAITAN OTOMATIS (SMART BUNDLE)
+# ==============================================================================
+function Run-CustomInstallation {
+    Clear-Host
+    Show-SmartLabBanner
+    Write-Host "==============================================================================" -ForegroundColor Green
+    Write-Host "                MENU INSTALASI KUSTOM & PAKET SOFTWARE LAB                    " -ForegroundColor Green
+    Write-Host "==============================================================================" -ForegroundColor Green
+    Write-Host "Pilih software yang ingin diinstal. Paket keterkaitan otomatis disertakan:`n" -ForegroundColor DarkGray
+
+    # Daftar modul custom dengan dependensi otomatis
+    $catalog = @(
+        @{ Id = 1;  Name = "QGIS Desktop"; Description = "Sistem Informasi Geografis (Otomatis ikut Google Earth Pro)"; Deps = @("Google Earth Pro"); Action = "QGIS" },
+        @{ Id = 2;  Name = "Google Earth Pro"; Description = "Pemetaan Spasial 3D / Citra Satelit"; Deps = @(); Action = "GoogleEarth" },
+        @{ Id = 3;  Name = "Oracle VM VirtualBox"; Description = "Virtualisasi Lab (Otomatis ikut Extension Pack)"; Deps = @("VBox Extension Pack"); Action = "VirtualBox" },
+        @{ Id = 4;  Name = "Laragon (WAMP Stack)"; Description = "Web Server Utama Lab (PHP 8.x + MySQL + Composer/Laravel)"; Deps = @("Composer"); Action = "Laragon" },
+        @{ Id = 5;  Name = "XAMPP Server"; Description = "Web Server Sekunder (Port Anti-Bentrok 8088/3307)"; Deps = @(); Action = "XAMPP" },
+        @{ Id = 6;  Name = "Flutter SDK"; Description = "Mobile & Web Dev (Otomatis ikut Git, Chrome, VS Code, Android Studio)"; Deps = @("Git", "Chrome", "VSCode", "AndroidStudio"); Action = "Flutter" },
+        @{ Id = 7;  Name = "Visual Studio Code"; Description = "Code Editor Standar Lab"; Deps = @(); Action = "VSCode" },
+        @{ Id = 8;  Name = "Microsoft Visual Studio 2022"; Description = "IDE Desktop C++ (100% Offline Layout)"; Deps = @(); Action = "VisualStudio" },
+        @{ Id = 9;  Name = "Android Studio"; Description = "IDE Pemrograman Mobile Android"; Deps = @(); Action = "AndroidStudio" },
+        @{ Id = 10; Name = "Apache NetBeans IDE"; Description = "IDE Java / C++ (High-Speed GitHub CDN / Bundled JDK)"; Deps = @("JavaJDK"); Action = "NetBeans" },
+        @{ Id = 11; Name = "Arduino IDE"; Description = "Pemrograman Mikrokontroler & IoT"; Deps = @(); Action = "Arduino" },
+        @{ Id = 12; Name = "Python 3.13 / 3.12 LTS"; Description = "Interpreter Python with PIP & PATH"; Deps = @(); Action = "Python" },
+        @{ Id = 13; Name = "Java JDK 17 LTS"; Description = "Temurin OpenJDK with JAVA_HOME"; Deps = @(); Action = "JavaJDK" },
+        @{ Id = 14; Name = "Node.js LTS (v22)"; Description = "JavaScript Runtime & NPM"; Deps = @(); Action = "NodeJS" },
+        @{ Id = 15; Name = "Git for Windows"; Description = "Version Control System & Bash Tools"; Deps = @(); Action = "Git" },
+        @{ Id = 16; Name = "Google Chrome Enterprise"; Description = "Browser Utama Lab & Engine Flutter Web"; Deps = @(); Action = "Chrome" },
+        @{ Id = 17; Name = "7-Zip & WinRAR"; Description = "Utilitas Ekstraksi Arsip Lab (.zip, .rar, .7z)"; Deps = @(); Action = "Extractors" },
+        @{ Id = 18; Name = "Cisco Packet Tracer"; Description = "Simulasi Jaringan Komputer (NetAcad)"; Deps = @(); Action = "Cisco" },
+        @{ Id = 19; Name = "Embarcadero Delphi"; Description = "Pemrograman Visual Pascal (Interaktif)"; Deps = @(); Action = "Delphi" },
+        @{ Id = 20; Name = "Proteus Design Suite"; Description = "Simulasi Rangkaian Elektronika (Interaktif)"; Deps = @(); Action = "Proteus" }
+    )
+
+    foreach ($item in $catalog) {
+        $depText = if ($item.Deps.Count -gt 0) { " [Paket: +$($item.Deps -join ', ')]" } else { "" }
+        Write-Host (" [{0,2}] {1,-26} {2}" -f $item.Id, $item.Name, $depText) -ForegroundColor Cyan
+        Write-Host ("      -> {0}" -f $item.Description) -ForegroundColor DarkGray
+    }
+
+    Write-Host "`n  Contoh input: ketik '1' untuk QGIS (otomatis + Google Earth)" -ForegroundColor Yellow
+    Write-Host "                ketik '3' untuk VirtualBox (otomatis + Extension Pack)" -ForegroundColor Yellow
+    Write-Host "                ketik '1, 3, 7' untuk memilih beberapa aplikasi sekaligus" -ForegroundColor Yellow
+    Write-Host "                ketik '0' untuk Batal dan kembali ke Menu Utama`n" -ForegroundColor DarkCyan
+
+    $inputChoice = Read-Host "Masukkan nomor pilihan aplikasi yang ingin diinstal"
+    if ([string]::IsNullOrWhiteSpace($inputChoice) -or $inputChoice.Trim() -eq "0") {
+        Write-Host "Instalasi kustom dibatalkan." -ForegroundColor Yellow
+        return
+    }
+
+    # Parsing nomor pilihan
+    $selectedIds = @()
+    $tokens = $inputChoice -split '[,; ]+'
+    foreach ($tok in $tokens) {
+        $trimmed = $tok.Trim()
+        if ($trimmed -match '^\d+$') {
+            $val = [int]$trimmed
+            if ($val -ge 1 -and $val -le 20) {
+                if ($selectedIds -notcontains $val) { $selectedIds += $val }
+            }
+        }
+    }
+
+    if ($selectedIds.Count -eq 0) {
+        Write-Host "[!] Tidak ada nomor aplikasi valid yang dipilih." -ForegroundColor Red
+        return
+    }
+
+    # Himpun target instalasi beserta dependensi otomatisnya
+    $actionsToRun = @()
+    Write-Host "`n[>>>] Menganalisis Keterkaitan & Paket Ketergantungan Software..." -ForegroundColor Cyan
+
+    foreach ($id in $selectedIds) {
+        $mod = $catalog | Where-Object { $_.Id -eq $id } | Select-Object -First 1
+        if ($mod) {
+            Write-Host " -> Dipilih: $($mod.Name)" -ForegroundColor Green
+            if ($actionsToRun -notcontains $mod.Action) { $actionsToRun += $mod.Action }
+
+            # Keterkaitan 1: QGIS Desktop -> Google Earth Pro
+            if ($mod.Action -eq "QGIS") {
+                if ($actionsToRun -notcontains "GoogleEarth") {
+                    $actionsToRun += "GoogleEarth"
+                    Write-Host "    [+ Auto-Paket] Menambahkan dependensi: Google Earth Pro" -ForegroundColor Yellow
+                }
+            }
+
+            # Keterkaitan 2: VirtualBox -> Extension Pack (sudah di dalam Setup-VirtualBox)
+            if ($mod.Action -eq "VirtualBox") {
+                Write-Host "    [+ Auto-Paket] Menambahkan dependensi: Oracle VM VirtualBox Extension Pack" -ForegroundColor Yellow
+            }
+
+            # Keterkaitan 3: Laragon -> Composer & Laravel
+            if ($mod.Action -eq "Laragon") {
+                if ($actionsToRun -notcontains "Composer") {
+                    $actionsToRun += "Composer"
+                    Write-Host "    [+ Auto-Paket] Menambahkan dependensi: Composer & Laravel Installer" -ForegroundColor Yellow
+                }
+            }
+
+            # Keterkaitan 4: NetBeans -> Java JDK 17
+            if ($mod.Action -eq "NetBeans") {
+                if ($actionsToRun -notcontains "JavaJDK") {
+                    $actionsToRun += "JavaJDK"
+                    Write-Host "    [+ Auto-Paket] Menambahkan dependensi: Java JDK 17 LTS (Diperlukan NetBeans)" -ForegroundColor Yellow
+                }
+            }
+
+            # Keterkaitan 5: Flutter SDK -> Git, Chrome, VSCode, Android Studio
+            if ($mod.Action -eq "Flutter") {
+                if ($actionsToRun -notcontains "Git") {
+                    $actionsToRun += "Git"
+                    Write-Host "    [+ Auto-Paket] Menambahkan dependensi: Git for Windows (Wajib Flutter)" -ForegroundColor Yellow
+                }
+                if ($actionsToRun -notcontains "Chrome") {
+                    $actionsToRun += "Chrome"
+                    Write-Host "    [+ Auto-Paket] Menambahkan dependensi: Google Chrome (Engine Flutter Web)" -ForegroundColor Yellow
+                }
+            }
+        }
+    }
+
+    Write-Host "`nMemulai proses instalasi untuk pilihan Anda..." -ForegroundColor Cyan
+    $script:InstallResults = @()
+
+    foreach ($act in $actionsToRun) {
+        switch ($act) {
+            "Extractors"    { Setup-7Zip; Setup-WinRAR }
+            "Chrome"        { Setup-GoogleChrome }
+            "Git"           { Setup-Git }
+            "VSCode"        {
+                $vscodeMirrors = @(
+                    "https://vscode.download.prss.microsoft.com/dbazure/download/stable/fabdbac710c49742d1ae8f47303771f654f01f94/VSCodeUserSetup-x64-1.98.0.exe",
+                    "https://update.code.visualstudio.com/latest/win32-x64-user/stable",
+                    "https://az764295.vo.msecnd.net/stable/latest/VSCodeUserSetup-x64.exe"
+                )
+                Install-AppSmart -Name "Visual Studio Code" -FilePattern @("*VSCode*Setup*.exe", "*code*setup*.exe") -DownloadUrls $vscodeMirrors -SilentArgs "/VERYSILENT /NORESTART /MERGETASKS=!runcode,addcontextmenufiles,addcontextmenufolders,associatewithfiles,addtopath" -WingetId "Microsoft.VisualStudioCode" -CheckPath @("$env:LOCALAPPDATA\Programs\Microsoft VS Code\Code.exe", "C:\Program Files\Microsoft VS Code\Code.exe")
+            }
+            "Python"        { Setup-Python }
+            "JavaJDK"       { Setup-JavaJDK }
+            "NodeJS"        { Setup-NodeJS }
+            "VirtualBox"    { Setup-VirtualBox }
+            "GoogleEarth"   { Setup-GoogleEarth }
+            "QGIS"          {
+                $qgisMirrors = @(
+                    "https://download.osgeo.org/qgis/windows/QGIS-OSGeo4W-3.34.14-1.msi",
+                    "https://qgis.org/downloads/QGIS-OSGeo4W-3.34.14-1.msi"
+                )
+                Install-AppSmart -Name "QGIS Desktop" -FilePattern "*QGIS*.msi" -DownloadUrls $qgisMirrors -SilentArgs "/qn" -WingetId "OSGeo.QGIS" -CheckPath "C:\Program Files\QGIS *\bin\qgis-bin.exe"
+            }
+            "VisualStudio"  { Setup-VisualStudio }
+            "NetBeans"      { Setup-NetBeans }
+            "AndroidStudio" {
+                $androidStudioMirrors = @(
+                    "https://redirector.gvt1.com/edgedl/android/studio/install/2024.2.1.12/android-studio-2024.2.1.12-windows.exe",
+                    "https://dl.google.com/dl/android/studio/install/2024.2.1.12/android-studio-2024.2.1.12-windows.exe"
+                )
+                Install-AppSmart -Name "Android Studio" -FilePattern @("*Android*Studio*.exe", "*android-studio*.exe") -DownloadUrls $androidStudioMirrors -SilentArgs "/S" -WingetId "Google.AndroidStudio" -CheckPath @("C:\Program Files\Android\Android Studio\bin\studio64.exe", "C:\Program Files\Android Studio\bin\studio64.exe")
+            }
+            "Arduino"       {
+                $arduinoMirrors = @(
+                    "https://downloads.arduino.cc/arduino-ide/arduino-ide_2.3.10_Windows_64bit.msi",
+                    "https://downloads.arduino.cc/arduino-ide/arduino-ide_2.3.10_Windows_64bit.exe"
+                )
+                Install-AppSmart -Name "Arduino IDE" -FilePattern @("*arduino*.msi", "*arduino*.exe") -DownloadUrls $arduinoMirrors -SilentArgs "ALLUSERS=1 /S" -WingetId "ArduinoSA.IDE.stable" -CheckPath @("C:\Program Files\Arduino IDE\Arduino IDE.exe", "C:\Program Files\Arduino\arduino.exe", "C:\Users\*\AppData\Local\Programs\Arduino IDE\Arduino IDE.exe")
+            }
+            "Flutter"       { Setup-FlutterSDK }
+            "Laragon"       { Setup-LaragonStack }
+            "Composer"      { Setup-ComposerAndLaravel }
+            "XAMPP"         { Setup-XamppStack }
+            "Cisco"         {
+                $ciscoMirrors = @(
+                    "https://drive.google.com/file/d/1N_YQNs2xFrdFGRPs4kqgF6LGOYDp37ZK/view?usp=sharing",
+                    "https://drive.google.com/file/d/1O4flOVt7G-xZmfJSlxP3aLjTj1JM_LYP/view?usp=sharing"
+                )
+                Install-AppSmart -Name "Cisco Packet Tracer" -FilePattern @("*packettracer*.exe", "*PacketTracer*.exe", "*Cisco*.exe", "*packettracer*.rar", "*cisco*.rar", "*packettracer*.zip") -DownloadUrls $ciscoMirrors -SilentArgs "/VERYSILENT /NORESTART" -CheckPath @("C:\Program Files\Cisco Packet Tracer *\bin\PacketTracer.exe", "C:\Program Files (x86)\Cisco Packet Tracer *\bin\PacketTracer.exe")
+            }
+            "Delphi"        { Install-AppSmart -Name "Embarcadero Delphi" -FilePattern "*delphi*.exe" -IsInteractive -CheckPath @("C:\Program Files*\Embarcadero\Studio\*\bin\bds.exe", "C:\Program Files (x86)\Embarcadero\Studio\*\bin\bds.exe") }
+            "Proteus"       { Install-AppSmart -Name "Proteus Design Suite" -FilePattern "*proteus*.exe" -IsInteractive -CheckPath @("C:\Program Files*\Labcenter Electronics\Proteus *\BIN\PDS.EXE", "C:\Program Files (x86)\Labcenter Electronics\Proteus *\BIN\PDS.EXE") }
+        }
+        Wait-PacedStep -Seconds 1
+    }
+
+    # Bersihkan duplikat icon di Desktop
+    Clean-LabDesktopIcons
+
+    Write-Host "`n==============================================================================" -ForegroundColor Green
+    Write-Host "                SELESAI - INSTALASI KUSTOM LAB TI SELESAI                     " -ForegroundColor Green
+    Write-Host "==============================================================================" -ForegroundColor Green
+    $berhasil = ($script:InstallResults | Where-Object { $_.Status -in @("SUDAH TERPASANG", "BERHASIL DIINSTAL") } | Measure-Object).Count
+    Write-Host "  [OK] Software Diproses Berhasil : $berhasil Software" -ForegroundColor Green
 }
 
 # ==============================================================================
@@ -4101,13 +4293,14 @@ while ($running) {
     Clear-Host
     Show-SmartLabBanner
     Write-Host "Pilihan Tindakan:" -ForegroundColor Yellow
-    Write-Host " [1] Jalankan Otomasi Lengkap Lab (Instalasi & Standarisasi 21 Software)"
-    Write-Host " [2] Unduh Seluruh Master Installer Offline ke Flashdisk (Download Saja / Cache Master)"
-    Write-Host " [3] Verifikasi Status & Peta Port Software Lab"
-    Write-Host " [4] Rapikan & Bersihkan Shortcut Desktop Lab (Hapus duplikat & icon CLI)"
-    Write-Host " [5] Keluar`n"
+    Write-Host " [1] Jalankan Otomasi Lengkap Lab (Instalasi & Standarisasi 22 Software)"
+    Write-Host " [2] Instalasi Kustom / Pilihan Software (Smart Bundle: QGIS+Earth, VBox+ExtPack, dll)"
+    Write-Host " [3] Unduh Seluruh Master Installer Offline ke Flashdisk (Download Saja / Cache Master)"
+    Write-Host " [4] Verifikasi Status & Peta Port Software Lab"
+    Write-Host " [5] Rapikan & Bersihkan Shortcut Desktop Lab (Hapus duplikat & icon CLI)"
+    Write-Host " [6] Keluar`n"
 
-    $choice = Read-Host "Masukkan pilihan Anda (1/2/3/4/5)"
+    $choice = Read-Host "Masukkan pilihan Anda (1/2/3/4/5/6)"
 
     switch ($choice) {
         "1" {
@@ -4126,22 +4319,26 @@ while ($running) {
             Wait-EnterOnly -PromptMessage "[Tekan tombol ENTER untuk kembali ke Menu Utama...]"
         }
         "2" {
-            Start-DownloadOnlyMaster
+            Run-CustomInstallation
             Wait-EnterOnly -PromptMessage "[Tekan tombol ENTER untuk kembali ke Menu Utama...]"
         }
         "3" {
-            Clear-Host
-            Show-SmartLabBanner
-            Test-LabSoftwareStatus
+            Start-DownloadOnlyMaster
             Wait-EnterOnly -PromptMessage "[Tekan tombol ENTER untuk kembali ke Menu Utama...]"
         }
         "4" {
             Clear-Host
             Show-SmartLabBanner
-            Clean-LabDesktopIcons
+            Test-LabSoftwareStatus
             Wait-EnterOnly -PromptMessage "[Tekan tombol ENTER untuk kembali ke Menu Utama...]"
         }
         "5" {
+            Clear-Host
+            Show-SmartLabBanner
+            Clean-LabDesktopIcons
+            Wait-EnterOnly -PromptMessage "[Tekan tombol ENTER untuk kembali ke Menu Utama...]"
+        }
+        "6" {
             Write-Host "`n[i] Mengembalikan pengaturan daya komputer ke normal..." -ForegroundColor DarkGray
             try { [SystemPowerKeeper]::RestoreNormal() } catch {}
             Write-Host "Keluar dari skrip otomasi SmartLab. Terima kasih." -ForegroundColor Green
@@ -4150,7 +4347,7 @@ while ($running) {
             [System.Environment]::Exit(0)
         }
         default {
-            Write-Host "Pilihan tidak valid. Silakan ketik angka 1, 2, 3, 4, atau 5." -ForegroundColor Red
+            Write-Host "Pilihan tidak valid. Silakan ketik angka 1, 2, 3, 4, 5, atau 6." -ForegroundColor Red
             Start-Sleep -Seconds 1
         }
     }
