@@ -2,7 +2,7 @@
 # SCRIPT OTOMASI INSTALASI SOFTWARE LABORATORIUM TEKNIK INFORMATIKA
 # UNIVERSITAS MALIKUSSALEH (UNIMAL)
 # ==============================================================================
-# Standarisasi 21 Software Praktikum Resmi Lab TI Unimal:
+# Standarisasi 22 Software Praktikum Resmi Lab TI Unimal:
 #
 # A. APLIKASI BERLISENSI (4):
 #   1. Delphi (Embarcadero Delphi / RAD Studio) -> Mode Interaktif (Pihak Ketiga)
@@ -10,7 +10,7 @@
 #   3. Microsoft Visual Studio 2022 Community
 #   4. Proteus Design Suite (Labcenter Electronics) -> Mode Interaktif (Pihak Ketiga)
 #
-# B. APLIKASI EKSTRAKSI, BROWSER & DEV STACK (17):
+# B. APLIKASI EKSTRAKSI, BROWSER & DEV STACK (18):
 #   5. 7-Zip (High-Speed Archive Extractor)
 #   6. WinRAR (Lab Archive Support .rar/.zip)
 #   7. Google Chrome Enterprise (Browser Utama Lab & Engine Flutter Web)
@@ -25,14 +25,15 @@
 #  16. Oracle VM VirtualBox
 #  17. Apache NetBeans IDE
 #  18. QGIS Desktop
-#  19. Arduino IDE (Arduino Uno & IoT)
-#  20. Laragon (WAMP Stack + Safe Modul)
-#  21. XAMPP Server (Port Anti-Bentrok)
+#  19. Google Earth Pro (Pemetaan Spasial 3D / GIS)
+#  20. Arduino IDE (Arduino Uno & IoT)
+#  21. Laragon (WAMP Stack + Safe Modul)
+#  22. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.30"
+$SCRIPT_CURRENT_VERSION = "3.3.31"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$Host.UI.RawUI.WindowTitle = "Installer Otomatis 21 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
+$Host.UI.RawUI.WindowTitle = "Installer Otomatis 22 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
 # 1. Pastikan status Administrator terdeteksi dengan cerdas (Dukungan Mode Admin & Mode Pengguna Standar)
 function Test-Administrator {
@@ -536,6 +537,18 @@ function Clean-LabDesktopIcons {
         if ((Test-Path $chromeLnk1) -and (Test-Path $chromeLnk2)) {
             Remove-Item -Path $chromeLnk2 -Force -ErrorAction SilentlyContinue
             Write-Host "   [x] Menghapus duplikat shortcut: Google Chrome Enterprise.lnk (Menyimpan Google Chrome.lnk)" -ForegroundColor DarkGray
+        }
+    }
+
+    # 6. Tangani DUPLIKAT Google Earth Pro pada Desktop
+    foreach ($dir in $desktopDirs) {
+        $geLnks = Get-ChildItem -Path $dir -Filter "*Google*Earth*.lnk" -File -ErrorAction SilentlyContinue
+        if ($geLnks -and $geLnks.Count -gt 1) {
+            $keep = $geLnks[0]
+            for ($i = 1; $i -lt $geLnks.Count; $i++) {
+                Remove-Item -Path $geLnks[$i].FullName -Force -ErrorAction SilentlyContinue
+                Write-Host "   [x] Menghapus duplikat shortcut: $($geLnks[$i].Name)" -ForegroundColor DarkGray
+            }
         }
     }
 
@@ -2547,6 +2560,49 @@ function Setup-VirtualBox {
             }
         }
     }
+# 10.2 Fungsi Setup Google Earth Pro (Pemetaan Spasial 3D / GIS)
+function Setup-GoogleEarth {
+    Write-Host "`n========================================================" -ForegroundColor Cyan
+    Write-Host "Memproses: Google Earth Pro (Pemetaan Spasial 3D / GIS)" -ForegroundColor Cyan
+    Write-Host "========================================================" -ForegroundColor Cyan
+
+    $gePaths = @(
+        "C:\Program Files\Google\Google Earth Pro\client\googleearth.exe",
+        "C:\Program Files (x86)\Google\Google Earth Pro\client\googleearth.exe",
+        "$env:LOCALAPPDATA\Google\Google Earth Pro\client\googleearth.exe"
+    )
+
+    $installedGe = $null
+    foreach ($gp in $gePaths) {
+        if (Test-Path $gp) { $installedGe = $gp; break }
+    }
+
+    if ($installedGe) {
+        Write-Host "   [OK SUDAH TERPASANG] Google Earth Pro terdeteksi di $installedGe." -ForegroundColor Green
+        Create-AppShortcut -TargetExe $installedGe -ShortcutName "Google Earth Pro"
+        Record-InstallResult -Name "Google Earth Pro" -Status "SUDAH TERPASANG" -Keterangan "Terdeteksi aktif di sistem (Skip)"
+        return
+    }
+
+    $googleEarthMirrors = @(
+        "https://dl.google.com/dl/earth/client/advanced/current/googleearthprowin-x64.exe",
+        "https://dl.google.com/earth/client/advanced/current/googleearthprowin-x64.exe",
+        "https://dl.google.com/dl/earth/client/advanced/current/googleearthprowin.exe"
+    )
+
+    Install-AppSmart -Name "Google Earth Pro" `
+                     -FilePattern @("*googleearthprowin*.exe", "*GoogleEarth*.exe", "*GoogleEarthPro*.exe", "*googleearth*.exe", "*googleearth*.msi") `
+                     -DownloadUrls $googleEarthMirrors `
+                     -SilentArgs "OMAHA=1 /S" `
+                     -WingetId "Google.GoogleEarthPro" `
+                     -CheckPath $gePaths
+
+    foreach ($gp in $gePaths) {
+        if (Test-Path $gp) {
+            Create-AppShortcut -TargetExe $gp -ShortcutName "Google Earth Pro"
+            break
+        }
+    }
 }
 
 # 11.0 Fungsi Setup Apache NetBeans (Direct High-Speed GitHub Releases CDN & Bundled JDK 26)
@@ -3337,6 +3393,7 @@ function Test-LabSoftwareStatus {
         @{ Name = "VBox Extension Pack"; Path = @("C:\Program Files\Oracle\VirtualBox\ExtensionPacks\*\ExtPack.xml", "C:\Program Files (x86)\Oracle\VirtualBox\ExtensionPacks\*\ExtPack.xml", "C:\Program Files\Oracle\VirtualBox\ExtensionPacks\Oracle_VM_VirtualBox_Extension_Pack\ExtPack.xml"); Reg = "*VirtualBox Extension Pack*" },
         @{ Name = "Apache NetBeans";     Path = @("C:\Program Files\*NetBeans*\netbeans\bin\netbeans*.exe", "C:\Program Files\*NetBeans*\bin\netbeans*.exe", "C:\Program Files\Apache NetBeans*\bin\netbeans*.exe", "C:\Program Files\Codelerity\*NetBeans*\bin\netbeans*.exe", "C:\Program Files (x86)\*NetBeans*\netbeans\bin\netbeans*.exe", "C:\Program Files (x86)\*NetBeans*\bin\netbeans*.exe", "$env:LOCALAPPDATA\Programs\*NetBeans*\bin\netbeans*.exe"); Reg = "*NetBeans*" },
         @{ Name = "QGIS Desktop";        Path = @("C:\Program Files\QGIS *\bin\qgis-bin.exe", "C:\Program Files\QGIS *\bin\qgis.exe"); Reg = "*QGIS*" },
+        @{ Name = "Google Earth Pro";    Path = @("C:\Program Files\Google\Google Earth Pro\client\googleearth.exe", "C:\Program Files (x86)\Google\Google Earth Pro\client\googleearth.exe", "$env:LOCALAPPDATA\Google\Google Earth Pro\client\googleearth.exe"); Reg = "*Google Earth Pro*" },
         @{ Name = "Arduino IDE";         Path = @("C:\Program Files\Arduino IDE\Arduino IDE.exe", "C:\Program Files\Arduino\arduino.exe", "C:\Users\*\AppData\Local\Programs\Arduino IDE\Arduino IDE.exe", "C:\Users\*\AppData\Local\Arduino*\arduino*.exe", "C:\Program Files (x86)\Arduino\arduino.exe"); Reg = "*Arduino*" },
         @{ Name = "Laragon";             Path = @("C:\laragon\laragon.exe", "D:\laragon\laragon.exe", "E:\laragon\laragon.exe"); Reg = "*Laragon*" },
         @{ Name = "XAMPP";               Path = @("C:\xampp\xampp-control.exe", "D:\xampp\xampp-control.exe"); Reg = "*XAMPP*" }
@@ -3519,6 +3576,10 @@ function Run-FullInstallation {
                      -CheckPath "C:\Program Files\QGIS *\bin\qgis-bin.exe"
     Wait-PacedStep
 
+    # 11.1 Google Earth Pro (Pemetaan Spasial 3D / GIS)
+    Setup-GoogleEarth
+    Wait-PacedStep
+
     # 12. Microsoft Visual Studio 2022 Community (Desktop development with C++ Workload - Support 100% Offline Layout)
     Setup-VisualStudio
     Wait-PacedStep
@@ -3593,7 +3654,7 @@ function Run-FullInstallation {
     Write-Host "==============================================================================" -ForegroundColor Green
     Write-Host "               SELESAI - REKAPITULASI STANDARISASI LAB TI                      " -ForegroundColor Green
     Write-Host "==============================================================================" -ForegroundColor Green
-    Write-Host "  Total Software Diproses   : $totalApps dari 21 Software Standar" -ForegroundColor White
+    Write-Host "  Total Software Diproses   : $totalApps dari 22 Software Standar" -ForegroundColor White
     Write-Host "  [OK] Berhasil / Terpasang : $berhasil Software" -ForegroundColor Green
     if ($menunggu -gt 0) {
         Write-Host "  [i] Menunggu Master Offline: $menunggu Software (Delphi / Proteus lisensi lab)" -ForegroundColor Yellow
@@ -3760,6 +3821,16 @@ function Start-DownloadOnlyMaster {
             Urls = @(
                 "https://download.osgeo.org/qgis/windows/QGIS-OSGeo4W-3.34.14-1.msi",
                 "https://qgis.org/downloads/QGIS-OSGeo4W-3.34.14-1.msi"
+            )
+        },
+        @{
+            Name = "Google Earth Pro"
+            FilePattern = @("*googleearthprowin*.exe", "*GoogleEarth*.exe", "*GoogleEarthPro*.exe", "*googleearth*.exe", "*googleearth*.msi")
+            DestFile = "googleearthprowin-x64.exe"
+            Urls = @(
+                "https://dl.google.com/dl/earth/client/advanced/current/googleearthprowin-x64.exe",
+                "https://dl.google.com/earth/client/advanced/current/googleearthprowin-x64.exe",
+                "https://dl.google.com/dl/earth/client/advanced/current/googleearthprowin.exe"
             )
         },
         @{
