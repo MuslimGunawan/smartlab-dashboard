@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 # MODUL 05: VIRTUALIZATION, GIS, HARDWARE & APPS (SMARTLAB LAB TI UNIMAL)
 # Oracle VM VirtualBox & Extension Pack, Google Earth Pro, QGIS Desktop,
 # Arduino IDE, Cisco Packet Tracer, Embarcadero Delphi, Proteus Design Suite
@@ -38,6 +38,10 @@ function Setup-VirtualBox {
                          -CheckPath $vboxPaths
         foreach ($vp in $vboxPaths) {
             if (Test-Path $vp) { $installedVbox = $vp; break }
+        }
+        if ($installedVbox) {
+            Create-AppShortcut -TargetExe $installedVbox -ShortcutName "Oracle VM VirtualBox"
+            Record-InstallResult -Name "Oracle VM VirtualBox" -Status "BERHASIL DIINSTAL" -Keterangan "Terpasang & shortcut dibuat"
         }
     } else {
         Write-Host "   [OK SUDAH TERPASANG] Oracle VM VirtualBox terdeteksi di $installedVbox." -ForegroundColor Green

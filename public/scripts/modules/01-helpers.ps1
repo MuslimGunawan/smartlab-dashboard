@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 # MODUL 01: CORE HELPERS & UTILITIES (SMARTLAB LAB TI UNIMAL)
 # ==============================================================================
 
@@ -703,12 +703,58 @@ function Install-AppSmart {
                 $proc = Start-Process -FilePath $installerFile.FullName -ArgumentList $argsList -Wait -PassThru
             }
 
-            if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
+            # Pemeriksaan status kelulusan instalasi
+            $binaryDetected = $false
+            if ($CheckPath) {
+                $checkList = @($CheckPath)
+                foreach ($cp in $checkList) {
+                    if ($cp -like "*\*" -or $cp -like "*/*") {
+                        $f = if ($cp -match '\*') { Get-ChildItem -Path $cp -File -ErrorAction SilentlyContinue | Select-Object -First 1 } else { Get-Item -Path $cp -ErrorAction SilentlyContinue }
+                        if ($f) { $binaryDetected = $true; Create-AppShortcut -TargetExe $f.FullName -ShortcutName $Name; break }
+                    } else {
+                        $cmd = Get-Command $cp -ErrorAction SilentlyContinue
+                        if ($cmd) { $binaryDetected = $true; break }
+                    }
+                }
+            }
+
+            # Exit code sukses umum di Windows: 0, 3010 (reboot required), 1641 (reboot initiated), 1638 (already installed)
+            if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010 -or $proc.ExitCode -eq 1641 -or $proc.ExitCode -eq 1638 -or $binaryDetected) {
                 Write-Host "[OK] Berhasil menginstal $Name!" -ForegroundColor Green
-                Record-InstallResult -Name $Name -Status "BERHASIL DIINSTAL" -Keterangan "Instalasi otomatis sukses"
+                $ket = if ($binaryDetected -and $proc.ExitCode -ne 0) { "Terdeteksi aktif di sistem (Exit: $($proc.ExitCode))" } else { "Instalasi otomatis sukses" }
+                Record-InstallResult -Name $Name -Status "BERHASIL DIINSTAL" -Keterangan $ket
+                return
             } else {
-                Write-Host "[!] Installer $Name keluar dengan kode: $($proc.ExitCode)" -ForegroundColor Yellow
-                Record-InstallResult -Name $Name -Status "GAGAL" -Keterangan "Kode keluar installer: $($proc.ExitCode)"
+                Write-Host "[!] Installer offline $Name keluar dengan kode: $($proc.ExitCode)" -ForegroundColor Yellow
+                
+                # Jika installer lokal gagal dan binary belum terdeteksi, coba otomatis fallback via Winget
+                if (-not [string]::IsNullOrWhiteSpace($WingetId) -and (Test-WingetAvailable)) {
+                    Write-Host "   [>>>] Mencoba fallback instalasi resmi via Winget ($WingetId)..." -ForegroundColor Yellow
+                    try {
+                        $wArgsList = @("install", "--id", "$WingetId", "--source", "winget", "-e", "--silent", "--accept-source-agreements", "--accept-package-agreements", "--disable-interactivity")
+                        if (-not [string]::IsNullOrWhiteSpace($WingetArgs)) {
+                            $extraW = Convert-ArgsToArray $WingetArgs
+                            if ($extraW) { $wArgsList += $extraW }
+                        }
+                        $pWinget = Start-Process -FilePath "winget.exe" -ArgumentList $wArgsList -Wait -PassThru -NoNewWindow -ErrorAction SilentlyContinue
+
+                        # Periksa kembali binary setelah winget
+                        if ($CheckPath) {
+                            foreach ($cp in @($CheckPath)) {
+                                $f = if ($cp -match '\*') { Get-ChildItem -Path $cp -File -ErrorAction SilentlyContinue | Select-Object -First 1 } else { Get-Item -Path $cp -ErrorAction SilentlyContinue }
+                                if ($f) { $binaryDetected = $true; Create-AppShortcut -TargetExe $f.FullName -ShortcutName $Name; break }
+                            }
+                        }
+
+                        if (($pWinget -and ($pWinget.ExitCode -eq 0 -or $pWinget.ExitCode -eq 3010)) -or $binaryDetected) {
+                            Write-Host "[OK] Berhasil menginstal $Name via Winget Fallback!" -ForegroundColor Green
+                            Record-InstallResult -Name $Name -Status "BERHASIL DIINSTAL" -Keterangan "Terpasang via Winget Fallback"
+                            return
+                        }
+                    } catch {}
+                }
+
+                Record-InstallResult -Name $Name -Status "GAGAL" -Keterangan "Kode keluar: $($proc.ExitCode)"
             }
         }
 
@@ -772,7 +818,16 @@ function Install-AppSmart {
             }
             $pWinget = Start-Process -FilePath "winget.exe" -ArgumentList $wArgsList -Wait -PassThru -NoNewWindow -ErrorAction SilentlyContinue
 
-            if ($pWinget -and ($pWinget.ExitCode -eq 0 -or $pWinget.ExitCode -eq 3010)) {
+            # Periksa kembali keberadaan file executable setelah instalasi winget
+            $wBinary = $false
+            if ($CheckPath) {
+                foreach ($cp in @($CheckPath)) {
+                    $f = if ($cp -match '\*') { Get-ChildItem -Path $cp -File -ErrorAction SilentlyContinue | Select-Object -First 1 } else { Get-Item -Path $cp -ErrorAction SilentlyContinue }
+                    if ($f) { $wBinary = $true; Create-AppShortcut -TargetExe $f.FullName -ShortcutName $Name; break }
+                }
+            }
+
+            if (($pWinget -and ($pWinget.ExitCode -eq 0 -or $pWinget.ExitCode -eq 3010)) -or $wBinary) {
                 Write-Host "[OK] Berhasil menginstal $Name via Winget!" -ForegroundColor Green
                 Record-InstallResult -Name $Name -Status "BERHASIL DIINSTAL" -Keterangan "Terpasang via Winget Direct"
             } else {

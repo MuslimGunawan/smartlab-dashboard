@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 # MODUL 06: WORKFLOW ORCHESTRATOR & MENU HANDLERS (SMARTLAB LAB TI UNIMAL)
 # Run-FullInstallation, Test-LabSoftwareStatus, Start-DownloadOnlyMaster,
 # Run-CustomInstallation, Wait-PacedStep, Wait-EnterOnly
@@ -71,12 +71,19 @@ function Run-FullInstallation {
         "https://dl.google.com/dl/android/studio/install/2024.2.1.12/android-studio-2024.2.1.12-windows.exe",
         "https://dl.google.com/android/studio/install/2024.1.2.13/android-studio-2024.1.2.13-windows.exe"
     )
+    $asPaths = @(
+        "C:\Program Files\Android\Android Studio\bin\studio64.exe",
+        "C:\Program Files\Android Studio\bin\studio64.exe",
+        "C:\Program Files (x86)\Android\Android Studio\bin\studio64.exe",
+        "$env:LOCALAPPDATA\Programs\Android\Android Studio\bin\studio64.exe",
+        "C:\Users\*\AppData\Local\Programs\Android\Android Studio\bin\studio64.exe"
+    )
     Install-AppSmart -Name "Android Studio" `
                      -FilePattern @("*Android*Studio*.exe", "*android-studio*.exe") `
                      -DownloadUrls $androidStudioMirrors `
                      -SilentArgs "/S" `
                      -WingetId "Google.AndroidStudio" `
-                     -CheckPath @("C:\Program Files\Android\Android Studio\bin\studio64.exe", "C:\Program Files\Android Studio\bin\studio64.exe", "C:\Program Files (x86)\Android\Android Studio\bin\studio64.exe")
+                     -CheckPath $asPaths
     Wait-PacedStep
 
     # 12. QGIS Desktop (Otomatis Silent dengan Multi-Mirror Google Drive & CDN)
@@ -111,12 +118,20 @@ function Run-FullInstallation {
         "https://github.com/arduino/arduino-ide/releases/download/2.3.10/arduino-ide_2.3.10_Windows_64bit.msi",
         "https://github.com/arduino/arduino-ide/releases/download/2.3.10/arduino-ide_2.3.10_Windows_64bit.exe"
     )
+    $arduinoCheckPaths = @(
+        "C:\Program Files\Arduino IDE\Arduino IDE.exe",
+        "C:\Program Files\Arduino\arduino.exe",
+        "$env:LOCALAPPDATA\Programs\Arduino IDE\Arduino IDE.exe",
+        "C:\Users\*\AppData\Local\Programs\Arduino IDE\Arduino IDE.exe",
+        "C:\Users\*\AppData\Local\Arduino*\arduino*.exe",
+        "C:\Program Files (x86)\Arduino\arduino.exe"
+    )
     Install-AppSmart -Name "Arduino IDE" `
                      -FilePattern @("*arduino*.msi", "*arduino*.exe") `
                      -DownloadUrls $arduinoMirrors `
-                     -SilentArgs "ALLUSERS=1 /S" `
+                     -SilentArgs "/S /qn ALLUSERS=1" `
                      -WingetId "ArduinoSA.IDE.stable" `
-                     -CheckPath @("C:\Program Files\Arduino IDE\Arduino IDE.exe", "C:\Program Files\Arduino\arduino.exe", "C:\Users\*\AppData\Local\Programs\Arduino IDE\Arduino IDE.exe", "C:\Users\*\AppData\Local\Arduino*\arduino*.exe", "C:\Program Files (x86)\Arduino\arduino.exe")
+                     -CheckPath $arduinoCheckPaths
     Wait-PacedStep
 
     # 16. Flutter SDK (All Doctor Checks Passed & Auto-Configured)
@@ -946,14 +961,29 @@ function Run-CustomInstallation {
                     "https://redirector.gvt1.com/edgedl/android/studio/install/2024.2.1.12/android-studio-2024.2.1.12-windows.exe",
                     "https://dl.google.com/dl/android/studio/install/2024.2.1.12/android-studio-2024.2.1.12-windows.exe"
                 )
-                Install-AppSmart -Name "Android Studio" -FilePattern @("*Android*Studio*.exe", "*android-studio*.exe") -DownloadUrls $androidStudioMirrors -SilentArgs "/S" -WingetId "Google.AndroidStudio" -CheckPath @("C:\Program Files\Android\Android Studio\bin\studio64.exe", "C:\Program Files\Android Studio\bin\studio64.exe")
+                $asPaths = @(
+                    "C:\Program Files\Android\Android Studio\bin\studio64.exe",
+                    "C:\Program Files\Android Studio\bin\studio64.exe",
+                    "C:\Program Files (x86)\Android\Android Studio\bin\studio64.exe",
+                    "$env:LOCALAPPDATA\Programs\Android\Android Studio\bin\studio64.exe",
+                    "C:\Users\*\AppData\Local\Programs\Android\Android Studio\bin\studio64.exe"
+                )
+                Install-AppSmart -Name "Android Studio" -FilePattern @("*Android*Studio*.exe", "*android-studio*.exe") -DownloadUrls $androidStudioMirrors -SilentArgs "/S" -WingetId "Google.AndroidStudio" -CheckPath $asPaths
             }
             "Arduino"       {
                 $arduinoMirrors = @(
                     "https://downloads.arduino.cc/arduino-ide/arduino-ide_2.3.10_Windows_64bit.msi",
                     "https://downloads.arduino.cc/arduino-ide/arduino-ide_2.3.10_Windows_64bit.exe"
                 )
-                Install-AppSmart -Name "Arduino IDE" -FilePattern @("*arduino*.msi", "*arduino*.exe") -DownloadUrls $arduinoMirrors -SilentArgs "ALLUSERS=1 /S" -WingetId "ArduinoSA.IDE.stable" -CheckPath @("C:\Program Files\Arduino IDE\Arduino IDE.exe", "C:\Program Files\Arduino\arduino.exe", "C:\Users\*\AppData\Local\Programs\Arduino IDE\Arduino IDE.exe")
+                $arduinoCheckPaths = @(
+                    "C:\Program Files\Arduino IDE\Arduino IDE.exe",
+                    "C:\Program Files\Arduino\arduino.exe",
+                    "$env:LOCALAPPDATA\Programs\Arduino IDE\Arduino IDE.exe",
+                    "C:\Users\*\AppData\Local\Programs\Arduino IDE\Arduino IDE.exe",
+                    "C:\Users\*\AppData\Local\Arduino*\arduino*.exe",
+                    "C:\Program Files (x86)\Arduino\arduino.exe"
+                )
+                Install-AppSmart -Name "Arduino IDE" -FilePattern @("*arduino*.msi", "*arduino*.exe") -DownloadUrls $arduinoMirrors -SilentArgs "/S /qn ALLUSERS=1" -WingetId "ArduinoSA.IDE.stable" -CheckPath $arduinoCheckPaths
             }
             "Flutter"       { Setup-FlutterSDK }
             "Laragon"       { Setup-LaragonStack }
