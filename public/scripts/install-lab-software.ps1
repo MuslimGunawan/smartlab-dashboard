@@ -31,7 +31,7 @@
 #  22. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.4.3"
+$SCRIPT_CURRENT_VERSION = "3.4.4"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 22 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -2501,8 +2501,26 @@ function Setup-VirtualBox {
                     try {
                         $extInstalledSuccess = $false
 
-                        # Kumpulan hash lisensi PUEL resmi Oracle VirtualBox (PUEL v12, v11, v10, dll.)
-                        # eb31505e... adalah hash SHA-256 resmi untuk License version 12 (22 July 2024 / VirtualBox 7.1 & 7.2)
+                        # Ekstrak hash lisensi langsung dari extpack (VirtualBox menyimpan file ExtPack-license.txt atau License-PUEL.txt di dalamnya)
+                        $extractedLicenseHash = $null
+                        try {
+                            $tarTool = "tar.exe"
+                            if (Get-Command $tarTool -ErrorAction SilentlyContinue) {
+                                $licText = & $tarTool -xOf "$($extPackFile.FullName)" --wildcards "*ExtPack-license.txt*" 2>$null | Out-String
+                                if (-not $licText) {
+                                    $licText = & $tarTool -xOf "$($extPackFile.FullName)" --wildcards "*License*" 2>$null | Out-String
+                                }
+                                if ($licText -and $licText.Length -gt 100) {
+                                    # Hitung SHA-256 hash persis dari lisensi
+                                    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+                                    $bytes = [System.Text.Encoding]::UTF8.GetBytes($licText.Replace("`r`n", "`n"))
+                                    $hashBytes = $sha256.ComputeHash($bytes)
+                                    $extractedLicenseHash = [System.BitConverter]::ToString($hashBytes).Replace("-", "").ToLower()
+                                }
+                            }
+                        } catch {}
+
+                        # Kumpulan hash lisensi PUEL resmi Oracle VirtualBox (v12, v11, v10, dll.)
                         $knownHashes = @(
                             "eb31505e56e9b4d0fbca139104da41ac6f6b98f8e78968bdf01b1f3da3c4f9ae",
                             "33d7284dc4a0ece381196da3cfe3f45f8b94642b",
@@ -2511,6 +2529,9 @@ function Setup-VirtualBox {
                             "10a1001452a7d86663f69f174ec62f31f95e841a",
                             "78749a0783f0876f7f5292e4a3b7f607266feb4d"
                         )
+                        if ($extractedLicenseHash) {
+                            $knownHashes = @($extractedLicenseHash) + $knownHashes
+                        }
 
                         # Strategi 1: Pasang langsung dengan parameter resmi non-interaktif --accept-license=<hash>
                         Write-Host "   [i] Menerapkan persetujuan lisensi PUEL otomatis (Mode Non-Interaktif)..." -ForegroundColor Cyan
@@ -2523,13 +2544,21 @@ function Setup-VirtualBox {
                             }
                         }
 
-                        # Strategi 2: Jika hash spesifik belum tembus, suntikkan input 'y' otomatis via cmd piping tanpa menahan terminal
+                        # Strategi 2: Piping non-blocking (echo y) dengan timeout 15 detik agar tidak pernah stuck di prompt
                         if (-not $extInstalledSuccess) {
                             Write-Host "   [i] Menyetujui lisensi otomatis via Standard Input (Piping)..." -ForegroundColor Cyan
                             $pipeCmd = "/c `"(echo y) | `"$vboxManage`" extpack install --replace `"$($extPackFile.FullName)`"`""
-                            $pPipe = Start-Process -FilePath "cmd.exe" -ArgumentList $pipeCmd -Wait -PassThru -NoNewWindow -ErrorAction SilentlyContinue
-                            if ($pPipe -and $pPipe.ExitCode -eq 0) {
-                                $extInstalledSuccess = $true
+                            $pPipe = Start-Process -FilePath "cmd.exe" -ArgumentList $pipeCmd -PassThru -NoNewWindow -ErrorAction SilentlyContinue
+                            if ($pPipe) {
+                                $sw = [System.Diagnostics.Stopwatch]::StartNew()
+                                while (-not $pPipe.HasExited -and $sw.ElapsedMilliseconds -lt 15000) {
+                                    Start-Sleep -Milliseconds 500
+                                }
+                                if (-not $pPipe.HasExited) {
+                                    $pPipe | Stop-Process -Force -ErrorAction SilentlyContinue
+                                } elseif ($pPipe.ExitCode -eq 0) {
+                                    $extInstalledSuccess = $true
+                                }
                             }
                         }
 
@@ -2606,11 +2635,31 @@ function Setup-GoogleEarth {
     }
 
     if (-not $checkInstalled) {
+        # Cari file installer offline yang sudah ada di Apps/
         $offlineGe = Get-ChildItem -Path $AppsDir -Filter "*googleearth*.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($offlineGe) {
+        
+        # Ekstrak MSI jika 7-Zip tersedia
+        $sevenZipExe = "C:\Program Files\7-Zip\7z.exe"
+        if (-not (Test-Path $sevenZipExe)) { $sevenZipExe = "C:\Program Files (x86)\7-Zip\7z.exe" }
+        if ($offlineGe -and (Test-Path $sevenZipExe)) {
+            Write-Host "   [i] Mengekstrak paket MSI Google Earth Pro dengan 7-Zip..." -ForegroundColor Yellow
+            $extractGeDir = Join-Path $AppsDir "GoogleEarth_Extracted"
+            & "$sevenZipExe" x "$($offlineGe.FullName)" "-o$extractGeDir" -y | Out-Null
+            $extractedMsi = Get-ChildItem -Path $extractGeDir -Filter "*.msi" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($extractedMsi) {
+                Write-Host "   [i] Memasang MSI Google Earth Pro: $($extractedMsi.Name)..." -ForegroundColor Cyan
+                Start-Process msiexec.exe -ArgumentList "/i `"$($extractedMsi.FullName)`" /qn /norestart" -Wait
+                Start-Sleep -Seconds 2
+                foreach ($gp in $gePaths) {
+                    if (Test-Path $gp) { $checkInstalled = $gp; break }
+                }
+            }
+        }
+
+        # Jika masih belum terpasang, coba langsung berbagai switch eksekusi
+        if (-not $checkInstalled -and $offlineGe) {
             Write-Host "   [i] Menjalankan fallback silent setup untuk $($offlineGe.Name)..." -ForegroundColor Yellow
-            # Coba switch alternatif Google Omaha / Silent installer
-            $altSwitches = @("/silent", "/s", "OMAHA=1 /silent")
+            $altSwitches = @("OMAHA=1 /S", "/silent", "/s", "OMAHA=1 /silent", "/qn")
             foreach ($sw in $altSwitches) {
                 $argList = Convert-ArgsToArray $sw
                 Start-Process -FilePath $offlineGe.FullName -ArgumentList $argList -Wait -ErrorAction SilentlyContinue
