@@ -1,4 +1,4 @@
-<#
+﻿<#
 ==================================================================================
 SMARTLAB UNIMAL - INISIALISASI OTOMATIS STRUKTUR SOFTWARE LAB TI
 Laboratorium Terpadu Teknik Informatika - Universitas Malikussaleh

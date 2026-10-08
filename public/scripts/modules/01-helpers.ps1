@@ -1,4 +1,4 @@
-# ==============================================================================
+﻿# ==============================================================================
 # MODUL 01: CORE HELPERS & UTILITIES (SMARTLAB LAB TI UNIMAL)
 # ==============================================================================
 
@@ -23,16 +23,9 @@ function Test-WingetAvailable {
 
 function Show-SmartLabBanner {
     Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor Cyan
-    Write-Host "  | " -NoNewline -ForegroundColor Cyan
-    Write-Host "SMARTLAB TI" -NoNewline -ForegroundColor White
-    Write-Host " | " -NoNewline -ForegroundColor DarkGray
-    Write-Host "STANDARISASI LABORATORIUM KOMPUTER" -NoNewline -ForegroundColor Gray
-    Write-Host (" " * (42 - "STANDARISASI LABORATORIUM KOMPUTER".Length)) -NoNewline
-    Write-Host "[v$SCRIPT_CURRENT_VERSION]" -NoNewline -ForegroundColor Yellow
-    Write-Host " |" -ForegroundColor Cyan
-    Write-Host "  | " -NoNewline -ForegroundColor Cyan
-    Write-Host "Teknik Informatika * Universitas Malikussaleh (UNIMAL)                     " -NoNewline -ForegroundColor DarkCyan
-    Write-Host "|" -ForegroundColor Cyan
+    $mainBanner = "SMARTLAB TI | STANDARISASI LABORATORIUM KOMPUTER [v$SCRIPT_CURRENT_VERSION]"
+    Write-Host ("  | {0,-74} |" -f $mainBanner) -ForegroundColor Cyan
+    Write-Host "  | Teknik Informatika * Universitas Malikussaleh (UNIMAL)                     |" -ForegroundColor DarkCyan
     Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor Cyan
     if ($script:IsAdmin) {
         Write-Host "  | Hak Akses Sesi : " -NoNewline -ForegroundColor Gray
