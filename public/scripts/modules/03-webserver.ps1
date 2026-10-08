@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 # MODUL 03: WEB SERVER & DATABASE STACK (SMARTLAB LAB TI UNIMAL)
 # Laragon (WAMP Stack + Custom Overlay), Sync-UnifiedLaragonPhp,
 # XAMPP Server (Port Anti-Bentrok: 8088/8444/3307), Composer & Laravel Setup
@@ -587,10 +587,11 @@ function Setup-XamppStack {
         $myIni = Join-Path $xamppDir "mysql\bin\my.ini"
         if (Test-Path $myIni) {
             $myText = [System.IO.File]::ReadAllText($myIni)
-            $newMyText = [System.Text.RegularExpressions.Regex]::Replace($myText, '(?m)^port\s*=\s*(?!3307\b)\d+\s*$', 'port = 3307')
+            # Ganti semua baris port = ... menjadi port = 3307 baik di [client] maupun [mysqld]
+            $newMyText = [System.Text.RegularExpressions.Regex]::Replace($myText, '(?m)^\s*port\s*=\s*\d+\s*$', 'port = 3307')
             if ($myText -ne $newMyText) {
                 [System.IO.File]::WriteAllText($myIni, $newMyText)
-                Write-Host "   [OK] MySQL Port XAMPP dialihkan ke 3307 (Laragon & Laravel standar tetap di Port 3306)" -ForegroundColor Green
+                Write-Host "   [OK] MySQL Port XAMPP (Client & Daemon) dialihkan ke 3307 (Laragon standar di Port 3306)" -ForegroundColor Green
             } else {
                 Write-Host "   [OK] Port MySQL XAMPP sudah diatur pada 3307." -ForegroundColor Green
             }
@@ -601,18 +602,21 @@ function Setup-XamppStack {
             $pmaText = [System.IO.File]::ReadAllText($pmaConfig)
             $newPmaText = $pmaText
 
-            if ($newPmaText -match "['`"]host['`"]\s*=") {
-                $newPmaText = [System.Text.RegularExpressions.Regex]::Replace($newPmaText, "(\['host'\]\s*=\s*['`"])[^'`"]*(['`"])", '${1}127.0.0.1${2}')
+            # Pastikan host = 127.0.0.1
+            if ($newPmaText -match "(\['host'\]\s*=\s*)['`"][^'`"]*['`"]") {
+                $newPmaText = [System.Text.RegularExpressions.Regex]::Replace($newPmaText, "(\['host'\]\s*=\s*)['`"][^'`"]*['`"]", '${1}''127.0.0.1''')
             } else {
                 $newPmaText += "`r`n`$cfg['Servers'][`$i]['host'] = '127.0.0.1';`r`n"
             }
 
-            if ($newPmaText -notmatch "['`"]port['`"]\s*=") {
-                $newPmaText += "`r`n`$cfg['Servers'][`$i]['port'] = '3307';`r`n"
+            # Pastikan port = 3307
+            if ($newPmaText -match "(\['port'\]\s*=\s*)['`"]?\d*['`"]?") {
+                $newPmaText = [System.Text.RegularExpressions.Regex]::Replace($newPmaText, "(\['port'\]\s*=\s*)['`"]?\d*['`"]?", '${1}''3307''')
             } else {
-                $newPmaText = [System.Text.RegularExpressions.Regex]::Replace($newPmaText, "(\['port'\]\s*=\s*['`"]?)[^'`"]*?(['`"]?;)", '${1}3307${2}')
+                $newPmaText += "`r`n`$cfg['Servers'][`$i]['port'] = '3307';`r`n"
             }
 
+            # Izinkan login tanpa password jika root belum berpassword
             if ($newPmaText -match "['`"]AllowNoPassword['`"]\s*=") {
                 $newPmaText = [System.Text.RegularExpressions.Regex]::Replace($newPmaText, "(\['AllowNoPassword'\]\s*=\s*)(?:false|0)", '${1}true')
             }
@@ -671,21 +675,39 @@ function Setup-XamppStack {
                 $newIniTxt += "`r`n[ServicePorts]`r`nApache = 8088`r`nApacheSSL = 8444`r`nMySQL = 3307`r`n"
             }
 
+            # Konfigurasi auto-start services di xampp-control.ini
+            if ($newIniTxt -match '(?m)\[Autostart\]') {
+                $newIniTxt = $newIniTxt -replace '(?m)^Apache\s*=.*$', 'Apache=1'
+                $newIniTxt = $newIniTxt -replace '(?m)^MySQL\s*=.*$', 'MySQL=1'
+            } else {
+                $newIniTxt += "`r`n[Autostart]`r`nApache=1`r`nMySQL=1`r`n"
+            }
+
             [System.IO.File]::WriteAllText($xamppIni, $newIniTxt)
             Write-Host "   [OK] Port pada XAMPP Control Panel disinkronkan ke 8088/8444/3307 & Admin diarahkan ke http://localhost:8088." -ForegroundColor Green
         }
 
+        # Jalankan service Apache dan MySQL XAMPP di latar belakang agar phpMyAdmin langsung dapat diakses
+        Write-Host "   [i] Memulai service Apache & MySQL XAMPP (Port 8088 & 3307)..." -ForegroundColor Yellow
+        $httpdExe = Join-Path $xamppDir "apache\bin\httpd.exe"
+        $mysqldExe = Join-Path $xamppDir "mysql\bin\mysqld.exe"
+
+        if (Test-Path $httpdExe) {
+            Start-Process -FilePath $httpdExe -WorkingDirectory (Join-Path $xamppDir "apache\bin") -WindowStyle Hidden -ErrorAction SilentlyContinue
+        }
+        if (Test-Path $mysqldExe) {
+            Start-Process -FilePath $mysqldExe -ArgumentList "--defaults-file=`"$myIni`"", "--standalone" -WorkingDirectory (Join-Path $xamppDir "mysql\bin") -WindowStyle Hidden -ErrorAction SilentlyContinue
+        }
+        Start-Sleep -Seconds 2
+
+        # Buat shortcut rapi di Desktop (XAMPP Control Panel & phpMyAdmin URL)
         $shDir = [Environment]::GetFolderPath("Desktop")
         $wsh = New-Object -ComObject WScript.Shell
         try {
-            $dashSc = $wsh.CreateShortcut((Join-Path $shDir "XAMPP Dashboard (Port 8088).url"))
-            $dashSc.TargetPath = "http://localhost:8088/dashboard/"
-            $dashSc.Save()
-
             $pmaSc = $wsh.CreateShortcut((Join-Path $shDir "XAMPP phpMyAdmin (Port 8088).url"))
             $pmaSc.TargetPath = "http://localhost:8088/phpmyadmin/"
             $pmaSc.Save()
-            Write-Host "   [OK] Shortcut Desktop XAMPP Dashboard & phpMyAdmin Port 8088 berhasil dibuat." -ForegroundColor Green
+            Write-Host "   [OK] Shortcut Desktop XAMPP phpMyAdmin (Port 8088) berhasil dibuat." -ForegroundColor Green
         } catch {}
     }
 }

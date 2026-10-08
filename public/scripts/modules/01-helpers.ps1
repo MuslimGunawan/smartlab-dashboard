@@ -277,6 +277,51 @@ function Clean-LabDesktopIcons {
         }
     }
 
+    # Bersihkan duplikat shortcut QGIS atau shortcut folder lama yang dibuat oleh MSI QGIS
+    foreach ($dir in $desktopDirs) {
+        # 1. Hapus shortcut folder (misal: "QGIS 3.x.x.lnk" yang mengarah ke folder Start Menu)
+        $qgisFolderLnks = Get-ChildItem -Path $dir -Filter "*QGIS*.lnk" -File -ErrorAction SilentlyContinue | Where-Object {
+            $_.Name -notmatch "QGIS Desktop"
+        }
+        foreach ($qfl in $qgisFolderLnks) {
+            try {
+                $wsh = New-Object -ComObject WScript.Shell
+                $sc = $wsh.CreateShortcut($qfl.FullName)
+                # Jika targetnya folder atau bukan qgis-bin.exe / qgis.exe, hapus
+                if (-not $sc.TargetPath -or (Test-Path $sc.TargetPath -PathType Container) -or $sc.TargetPath -match '\.lnk$') {
+                    Remove-Item -Path $qfl.FullName -Force -ErrorAction SilentlyContinue
+                    Write-Host "   [x] Menghapus shortcut folder QGIS usang: $($qfl.Name)" -ForegroundColor DarkGray
+                }
+            } catch {}
+        }
+
+        # 2. Sisakan hanya satu "QGIS Desktop.lnk"
+        $qgisAppLnks = Get-ChildItem -Path $dir -Filter "*QGIS Desktop*.lnk" -File -ErrorAction SilentlyContinue
+        if ($qgisAppLnks -and $qgisAppLnks.Count -gt 1) {
+            for ($i = 1; $i -lt $qgisAppLnks.Count; $i++) {
+                Remove-Item -Path $qgisAppLnks[$i].FullName -Force -ErrorAction SilentlyContinue
+                Write-Host "   [x] Menghapus duplikat shortcut: $($qgisAppLnks[$i].Name)" -ForegroundColor DarkGray
+            }
+        }
+    }
+
+    # Bersihkan duplikat shortcut XAMPP Dashboard & phpMyAdmin
+    foreach ($dir in $desktopDirs) {
+        $dashUrls = Get-ChildItem -Path $dir -Filter "*XAMPP*Dashboard*.url" -File -ErrorAction SilentlyContinue
+        foreach ($du in $dashUrls) {
+            Remove-Item -Path $du.FullName -Force -ErrorAction SilentlyContinue
+            Write-Host "   [x] Menghapus shortcut XAMPP Dashboard redundan: $($du.Name)" -ForegroundColor DarkGray
+        }
+
+        $pmaUrls = Get-ChildItem -Path $dir -Filter "*phpMyAdmin*.url" -File -ErrorAction SilentlyContinue
+        if ($pmaUrls -and $pmaUrls.Count -gt 1) {
+            for ($i = 1; $i -lt $pmaUrls.Count; $i++) {
+                Remove-Item -Path $pmaUrls[$i].FullName -Force -ErrorAction SilentlyContinue
+                Write-Host "   [x] Menghapus duplikat phpMyAdmin shortcut: $($pmaUrls[$i].Name)" -ForegroundColor DarkGray
+            }
+        }
+    }
+
     try {
         $shell = New-Object -ComObject Shell.Application
         $shell.Namespace(0).Self.InvokeVerb("refresh")
