@@ -164,10 +164,8 @@ function Run-FullInstallation {
     Clear-Host
     Show-SmartLabBanner
     Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor Green
-    Write-Host "  | " -NoNewline -ForegroundColor Green
-    Write-Host "RANGKUMAN HASIL STANDARISASI OTOMASI SOFTWARE LAB TI" -NoNewline -ForegroundColor White
-    Write-Host (" " * (51 - "RANGKUMAN HASIL STANDARISASI OTOMASI SOFTWARE LAB TI".Length)) -NoNewline
-    Write-Host "[v$SCRIPT_CURRENT_VERSION] |" -ForegroundColor Yellow
+    $hdrText = "RANGKUMAN HASIL STANDARISASI OTOMASI SOFTWARE LAB TI [v$SCRIPT_CURRENT_VERSION]"
+    Write-Host ("  | {0,-74} |" -f $hdrText) -ForegroundColor Green
     Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor Green
 
     $totalApp = $script:InstallResults.Count
@@ -202,10 +200,8 @@ function Run-FullInstallation {
 
 function Test-LabSoftwareStatus {
     Write-Host "`n  +----------------------------------------------------------------------------+" -ForegroundColor Cyan
-    Write-Host "  | " -NoNewline -ForegroundColor Cyan
-    Write-Host "STATUS VERIFIKASI SOFTWARE & WEB STACK LAB TI" -NoNewline -ForegroundColor White
-    Write-Host (" " * (58 - "STATUS VERIFIKASI SOFTWARE & WEB STACK LAB TI".Length)) -NoNewline
-    Write-Host "[v$SCRIPT_CURRENT_VERSION] |" -ForegroundColor Yellow
+    $statusHdr = "STATUS VERIFIKASI SOFTWARE & WEB STACK LAB TI [v$SCRIPT_CURRENT_VERSION]"
+    Write-Host ("  | {0,-74} |" -f $statusHdr) -ForegroundColor Cyan
     Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor Cyan
 
     $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
@@ -425,10 +421,8 @@ function Start-DownloadOnlyMaster {
     Clear-Host
     Show-SmartLabBanner
     Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor Cyan
-    Write-Host "  | " -NoNewline -ForegroundColor Cyan
-    Write-Host "MODE UNDUH SAJA: CACHE MASTER OFFLINE KE FOLDER APPS/" -NoNewline -ForegroundColor White
-    Write-Host (" " * (60 - "MODE UNDUH SAJA: CACHE MASTER OFFLINE KE FOLDER APPS/".Length)) -NoNewline
-    Write-Host "[v$SCRIPT_CURRENT_VERSION] |" -ForegroundColor Yellow
+    $dlHdr = "MODE UNDUH SAJA: CACHE MASTER OFFLINE KE APPS/ [v$SCRIPT_CURRENT_VERSION]"
+    Write-Host ("  | {0,-74} |" -f $dlHdr) -ForegroundColor Cyan
     Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor Cyan
     Write-Host "  Fungsi ini akan mengunduh seluruh file master software lab ke dalam folder:" -ForegroundColor Gray
     Write-Host "  -> $AppsDir" -ForegroundColor Yellow
@@ -765,10 +759,8 @@ function Start-DownloadOnlyMaster {
     Clear-Host
     Show-SmartLabBanner
     Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor Green
-    Write-Host "  | " -NoNewline -ForegroundColor Green
-    Write-Host "SELESAI - REKAPITULASI CACHE MASTER OFFLINE KE FLASHDISK (APPS/)" -NoNewline -ForegroundColor White
-    Write-Host (" " * (60 - "SELESAI - REKAPITULASI CACHE MASTER OFFLINE KE FLASHDISK (APPS/)".Length)) -NoNewline
-    Write-Host "[v$SCRIPT_CURRENT_VERSION] |" -ForegroundColor Yellow
+    $rekapHdr = "SELESAI - REKAPITULASI CACHE MASTER OFFLINE KE APPS/ [v$SCRIPT_CURRENT_VERSION]"
+    Write-Host ("  | {0,-74} |" -f $rekapHdr) -ForegroundColor Green
     Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor Green
 
     $totalSize = 0
@@ -806,10 +798,8 @@ function Run-CustomInstallation {
     Clear-Host
     Show-SmartLabBanner
     Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor Cyan
-    Write-Host "  | " -NoNewline -ForegroundColor Cyan
-    Write-Host "MENU INSTALASI KUSTOM & PAKET SOFTWARE LAB" -NoNewline -ForegroundColor White
-    Write-Host (" " * (60 - "MENU INSTALASI KUSTOM & PAKET SOFTWARE LAB".Length)) -NoNewline
-    Write-Host "[v$SCRIPT_CURRENT_VERSION] |" -ForegroundColor Yellow
+    $customHdr = "MENU INSTALASI KUSTOM & PAKET SOFTWARE LAB [v$SCRIPT_CURRENT_VERSION]"
+    Write-Host ("  | {0,-74} |" -f $customHdr) -ForegroundColor Cyan
     Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor Cyan
     Write-Host "  Pilih software yang ingin diinstal. Paket keterkaitan otomatis disertakan:`n" -ForegroundColor DarkGray
 
