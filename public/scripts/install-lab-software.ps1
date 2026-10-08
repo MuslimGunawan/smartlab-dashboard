@@ -65,32 +65,8 @@ if (-not $script:IsAdmin) {
 }
 
 # 1.1 FITUR ANTI-SLEEP, ANTI-LOCK & ANTI-IDLE SHUTDOWN (Komputer Lab Tetap Terjaga 100%)
-try {
-    Add-Type -TypeDefinition @"
-    using System;
-    using System.Runtime.InteropServices;
-    public class SystemPowerKeeper {
-        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-        public static extern uint SetThreadExecutionState(uint esFlags);
-        public const uint ES_CONTINUOUS = 0x80000000;
-        public const uint ES_SYSTEM_REQUIRED = 0x00000001;
-        public const uint ES_DISPLAY_REQUIRED = 0x00000002;
-        public const uint ES_AWAYMODE_REQUIRED = 0x00000040;
-
-        public static void KeepAwake() {
-            SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED | ES_AWAYMODE_REQUIRED);
-        }
-        public static void RestoreNormal() {
-            SetThreadExecutionState(ES_CONTINUOUS);
-        }
-    }
-"@ -ErrorAction SilentlyContinue
-    [SystemPowerKeeper]::KeepAwake()
-} catch {}
-
 function Invoke-LabKeepAlive {
     try {
-        [SystemPowerKeeper]::KeepAwake()
         $wsh = New-Object -ComObject WScript.Shell
         $wsh.SendKeys("{F15}")
     } catch {}
@@ -554,18 +530,8 @@ function Clean-LabDesktopIcons {
 
     # 4. Refresh icon cache desktop Windows agar perubahan langsung tampak
     try {
-        $code = @"
-using System;
-using System.Runtime.InteropServices;
-public class ShellRefresh {
-    [DllImport("shell32.dll")]
-    public static extern void SHChangeNotify(int wEventId, uint uFlags, IntPtr dwItem1, IntPtr dwItem2);
-}
-"@
-        if (-not ([System.Management.Automation.PSTypeName]'ShellRefresh').Type) {
-            Add-Type -TypeDefinition $code -ErrorAction SilentlyContinue
-        }
-        [ShellRefresh]::SHChangeNotify(0x08000000, 0x0000, [IntPtr]::Zero, [IntPtr]::Zero)
+        $shell = New-Object -ComObject Shell.Application
+        $shell.Namespace(0).Self.InvokeVerb("refresh")
     } catch {}
 
     Write-Host "   [OK] Desktop tertata rapi! Hanya aplikasi GUI praktikum utama yang tampil di layar." -ForegroundColor Green
@@ -1200,16 +1166,6 @@ function Setup-7Zip {
 # 5.2. Fungsi Setup WinRAR (Lab Archive Support .rar/.zip)
 function Setup-WinRAR {
     $keyFileInApps = Join-Path $AppsDir "rarreg.key"
-    if (-not (Test-Path $keyFileInApps)) {
-        Write-Host "   [i] Memeriksa lisensi registrasi WinRAR (rarreg.key)..." -ForegroundColor Cyan
-        try {
-            $rGist = Invoke-RestMethod -Uri "https://api.github.com/gists/de84d1ca59952cf1efaa8c061aab81a1" -Headers @{'User-Agent'='PowerShell'} -TimeoutSec 10 -ErrorAction SilentlyContinue
-            if ($rGist -and $rGist.files -and $rGist.files.'rarreg.key' -and $rGist.files.'rarreg.key'.content) {
-                [System.IO.File]::WriteAllText($keyFileInApps, $rGist.files.'rarreg.key'.content, [System.Text.Encoding]::UTF8)
-                Write-Host "   [OK] File registrasi rarreg.key berhasil disiapkan di folder Apps/!" -ForegroundColor Green
-            }
-        } catch {}
-    }
 
     $winRarMirrors = @(
         "https://www.rarlab.com/rar/winrar-x64-723.exe",
@@ -3717,12 +3673,6 @@ function Start-DownloadOnlyMaster {
             )
         },
         @{
-            Name = "WinRAR License (rarreg.key)"
-            FilePattern = @("rarreg.key")
-            DestFile = "rarreg.key"
-            Urls = @("https://gist.githubusercontent.com/MuhammadSaim/de84d1ca59952cf1efaa8c061aab81a1/raw/rarreg.key")
-        },
-        @{
             Name = "Google Chrome Enterprise"
             FilePattern = @("*chrome*.msi", "*Chrome*.msi", "*chrome*.exe")
             DestFile = "googlechromestandaloneenterprise64.msi"
@@ -4343,8 +4293,6 @@ while ($running) {
             Wait-EnterOnly -PromptMessage "[Tekan tombol ENTER untuk kembali ke Menu Utama...]"
         }
         "6" {
-            Write-Host "`n[i] Mengembalikan pengaturan daya komputer ke normal..." -ForegroundColor DarkGray
-            try { [SystemPowerKeeper]::RestoreNormal() } catch {}
             Write-Host "Keluar dari skrip otomasi SmartLab. Terima kasih." -ForegroundColor Green
             Wait-EnterOnly -PromptMessage "[Tekan tombol ENTER untuk menutup jendela ini...]"
             $running = $false
