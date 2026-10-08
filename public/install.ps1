@@ -30,7 +30,7 @@
 #  21. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.3.29"
+$SCRIPT_CURRENT_VERSION = "3.3.30"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 21 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -2072,10 +2072,16 @@ function Setup-XamppStack {
                 $newPmaText = [System.Text.RegularExpressions.Regex]::Replace($newPmaText, "(\['AllowNoPassword'\]\s*=\s*)(?:false|0)", '${1}true')
             }
 
-            # Nonaktifkan warning konfigurasi storage
+            # Nonaktifkan warning konfigurasi storage & perbaiki controluser 'pma' yang memicu error merah
             if ($newPmaText -notmatch "PmaNoRelation_DisableWarning") {
                 $newPmaText += "`r`n`$cfg['PmaNoRelation_DisableWarning'] = true;`r`n"
+            } else {
+                $newPmaText = [System.Text.RegularExpressions.Regex]::Replace($newPmaText, "(\['PmaNoRelation_DisableWarning'\]\s*=\s*)(?:false|0)", '${1}true')
             }
+
+            # Kosongkan atau komentari controluser & controlpass jika user pma tidak terkonfigurasi di MySQL
+            $newPmaText = $newPmaText -replace '(?m)^\s*\$cfg\[.Servers.\]\[\$i\]\[.controluser.\]\s*=.*$', '// $cfg[''Servers''][$i][''controluser''] = '''';'
+            $newPmaText = $newPmaText -replace '(?m)^\s*\$cfg\[.Servers.\]\[\$i\]\[.controlpass.\]\s*=.*$', '// $cfg[''Servers''][$i][''controlpass''] = '''';'
 
             if ($pmaText -ne $newPmaText) {
                 [System.IO.File]::WriteAllText($pmaConfig, $newPmaText)
