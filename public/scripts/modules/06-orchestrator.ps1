@@ -251,6 +251,15 @@ function Test-LabSoftwareStatus {
         $env:Path = "$activePhpDir;" + ($cleanParts -join ';')
     }
 
+    $composerSetupBin = "C:\ProgramData\ComposerSetup\bin"
+    $composerGlobalBin = Join-Path $env:APPDATA "Composer\vendor\bin"
+    if (Test-Path $composerSetupBin -and $env:Path -notlike "*$composerSetupBin*") {
+        $env:Path = "$composerSetupBin;" + $env:Path
+    }
+    if (Test-Path $composerGlobalBin -and $env:Path -notlike "*$composerGlobalBin*") {
+        $env:Path = "$composerGlobalBin;" + $env:Path
+    }
+
     $cliChecks = @(
         @{ Name = "Git"; Cmd = { git --version 2>&1 } },
         @{ Name = "Python 3"; Cmd = { python --version 2>&1 } },
@@ -259,8 +268,21 @@ function Test-LabSoftwareStatus {
         @{ Name = "JAVA_HOME"; Cmd = { $env:JAVA_HOME } },
         @{ Name = "Node.js"; Cmd = { node --version 2>&1 } },
         @{ Name = "NPM"; Cmd = { npm --version 2>&1 } },
-        @{ Name = "PHP CLI"; Cmd = { php -v 2>&1 } },
-        @{ Name = "Composer"; Cmd = { composer --version --no-interaction 2>&1 } },
+        @{ Name = "PHP CLI"; Cmd = {
+            if ($activePhpDir -and (Test-Path (Join-Path $activePhpDir "php.exe"))) {
+                & (Join-Path $activePhpDir "php.exe") -v 2>&1
+            } else {
+                php -v 2>&1
+            }
+        } },
+        @{ Name = "Composer"; Cmd = {
+            $compBat = "C:\ProgramData\ComposerSetup\bin\composer.bat"
+            if (Test-Path $compBat) {
+                & $compBat --version --no-interaction 2>&1
+            } else {
+                composer --version --no-interaction 2>&1
+            }
+        } },
         @{ Name = "Laravel CLI"; Cmd = {
             $lBat = Join-Path $env:APPDATA "Composer\vendor\bin\laravel.bat"
             if (Test-Path $lBat) {
@@ -296,7 +318,14 @@ function Test-LabSoftwareStatus {
                 })
 
                 $firstLine = $null
-                if ($chk.Name -eq "Composer") {
+                if ($chk.Name -eq "PHP CLI") {
+                    $pMatch = $cleanLines | Where-Object { $_ -match '(?i)PHP\s+(\d+\.\d+\.\d+)' } | Select-Object -First 1
+                    if ($pMatch) {
+                        $firstLine = $pMatch
+                    } elseif ($trimmed -match '(?i)PHP\s+(\d+\.\d+\.\d+)') {
+                        $firstLine = "PHP " + $matches[1] + " (cli)"
+                    }
+                } elseif ($chk.Name -eq "Composer") {
                     $cMatch = $cleanLines | Where-Object { $_ -match '(?i)Composer (version|\d+\.)' } | Select-Object -First 1
                     if ($cMatch) { $firstLine = $cMatch }
                 }

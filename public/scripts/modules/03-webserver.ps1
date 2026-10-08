@@ -292,10 +292,16 @@ function Setup-LaragonStack {
             $iniText = $iniText -replace '(?m)^\s*post_max_size\s*=.*$', 'post_max_size = 128M'
             $iniText = $iniText -replace '(?m)^\s*max_execution_time\s*=.*$', 'max_execution_time = 360'
 
+            # Gunakan nilai numerik 22527 (E_ALL & ~E_DEPRECATED & ~E_STRICT) agar Apache mod_fcgid & PHP CLI tidak crash/warning
             if ($iniText -match '(?m)^\s*error_reporting\s*=') {
-                $iniText = $iniText -replace '(?m)^\s*error_reporting\s*=.*$', 'error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT'
+                $iniText = $iniText -replace '(?m)^\s*error_reporting\s*=.*$', 'error_reporting = 22527'
             } else {
-                $iniText += "`r`nerror_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT`r`n"
+                $iniText += "`r`nerror_reporting = 22527`r`n"
+            }
+            if ($iniText -match '(?m)^\s*display_startup_errors\s*=') {
+                $iniText = $iniText -replace '(?m)^\s*display_startup_errors\s*=.*$', 'display_startup_errors = Off'
+            } else {
+                $iniText += "`r`ndisplay_startup_errors = Off`r`n"
             }
 
             [System.IO.File]::WriteAllText($pIni.FullName, $iniText)
@@ -344,9 +350,24 @@ function Setup-LaragonStack {
                     Copy-Item $availFcgid.FullName -Destination $standardSo -Force -ErrorAction SilentlyContinue
                 }
                 $newFcgidText = $fcgidText -replace '(?m)^LoadModule\s+fcgid_module\s+.*$', 'LoadModule fcgid_module "C:/laragon/etc/apache2/modules/mod_fcgid.so"'
+                
+                # Sinkronkan path PHP pada fcgid.conf ke folder PHP aktif Laragon
+                $activeLaragonPhp = $newestPhpDir
+                if (-not $activeLaragonPhp) {
+                    $activeLaragonPhp = Get-ChildItem -Path "$targetLaragon\bin\php" -Directory -ErrorAction SilentlyContinue |
+                                       Where-Object { Test-Path (Join-Path $_.FullName "php-cgi.exe") } |
+                                       Select-Object -First 1
+                }
+                if ($activeLaragonPhp) {
+                    $phpForward = $activeLaragonPhp.FullName.Replace('\', '/')
+                    $newFcgidText = $newFcgidText -replace '(?m)^FcgidInitialEnv\s+PATH\s+.*$', "FcgidInitialEnv PATH `"$phpForward;C:/Windows/system32;C:/Windows;C:/Windows/System32/Wbem;`""
+                    $newFcgidText = $newFcgidText -replace '(?m)^FcgidInitialEnv\s+PHPRC\s+.*$', "FcgidInitialEnv PHPRC `"$phpForward`""
+                    $newFcgidText = $newFcgidText -replace '(?m)^FcgidWrapper\s+.*$', "FcgidWrapper `"$phpForward/php-cgi.exe`" .php"
+                }
+
                 if ($fcgidText -ne $newFcgidText) {
                     [System.IO.File]::WriteAllText($fcgidConf, $newFcgidText)
-                    Write-Host "   [OK] Memperbaiki konfigurasi LoadModule fcgid.conf Laragon." -ForegroundColor Green
+                    Write-Host "   [OK] Memperbaiki konfigurasi LoadModule & PHP Path di fcgid.conf Laragon." -ForegroundColor Green
                 }
             } else {
                 $newFcgidText = $fcgidText -replace '(?m)^LoadModule\s+fcgid_module', '#LoadModule fcgid_module'
@@ -494,6 +515,22 @@ function Sync-UnifiedLaragonPhp {
             $compBatContent = "@echo off`r`n`"$topPhpExe`" `"%~dp0composer.phar`" %*`r`n"
             [System.IO.File]::WriteAllText($composerBat, $compBatContent)
             Write-Host "   [OK] Composer wrapper dikunci langsung ke $topPhpExe" -ForegroundColor Green
+        } catch {}
+    }
+
+    # Sinkronkan juga fcgid.conf Laragon ke topPhpDir agar Apache memanggil php-cgi yang sesuai
+    $laragonFcgid = "C:\laragon\etc\apache2\fcgid.conf"
+    if (Test-Path $laragonFcgid) {
+        try {
+            $fText = [System.IO.File]::ReadAllText($laragonFcgid)
+            $phpForward = $topPhpDir.Replace('\', '/')
+            $newFText = $fText -replace '(?m)^FcgidInitialEnv\s+PATH\s+.*$', "FcgidInitialEnv PATH `"$phpForward;C:/Windows/system32;C:/Windows;C:/Windows/System32/Wbem;`""
+            $newFText = $newFText -replace '(?m)^FcgidInitialEnv\s+PHPRC\s+.*$', "FcgidInitialEnv PHPRC `"$phpForward`""
+            $newFText = $newFText -replace '(?m)^FcgidWrapper\s+.*$', "FcgidWrapper `"$phpForward/php-cgi.exe`" .php"
+            if ($fText -ne $newFText) {
+                [System.IO.File]::WriteAllText($laragonFcgid, $newFText)
+                Write-Host "   [OK] fcgid.conf Apache Laragon disinkronkan ke $phpForward" -ForegroundColor Green
+            }
         } catch {}
     }
 
@@ -859,9 +896,14 @@ function Setup-ComposerAndLaravel {
             }
 
             if ($newIni -match '(?m)^\s*error_reporting\s*=') {
-                $newIni = $newIni -replace '(?m)^\s*error_reporting\s*=.*$', 'error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT'
+                $newIni = $newIni -replace '(?m)^\s*error_reporting\s*=.*$', 'error_reporting = 22527'
             } else {
-                $newIni += "`r`nerror_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT`r`n"
+                $newIni += "`r`nerror_reporting = 22527`r`n"
+            }
+            if ($newIni -match '(?m)^\s*display_startup_errors\s*=') {
+                $newIni = $newIni -replace '(?m)^\s*display_startup_errors\s*=.*$', 'display_startup_errors = Off'
+            } else {
+                $newIni += "`r`ndisplay_startup_errors = Off`r`n"
             }
 
             if ($iniContent -ne $newIni) {

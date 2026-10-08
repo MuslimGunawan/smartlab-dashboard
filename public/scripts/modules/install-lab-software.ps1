@@ -14,7 +14,7 @@
 #   - Apps/ Folder      : Folder khusus penyimpanan seluruh master installer offline
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.5.2"
+$SCRIPT_CURRENT_VERSION = "3.5.3"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 22 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 

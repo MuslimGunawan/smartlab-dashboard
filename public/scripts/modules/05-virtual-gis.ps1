@@ -207,7 +207,11 @@ function Setup-GoogleEarth {
     $gePaths = @(
         "C:\Program Files\Google\Google Earth Pro\client\googleearth.exe",
         "C:\Program Files (x86)\Google\Google Earth Pro\client\googleearth.exe",
-        "$env:LOCALAPPDATA\Google\Google Earth Pro\client\googleearth.exe"
+        "C:\Program Files\Google\Google Earth\client\googleearth.exe",
+        "C:\Program Files (x86)\Google\Google Earth\client\googleearth.exe",
+        "$env:LOCALAPPDATA\Google\Google Earth Pro\client\googleearth.exe",
+        "$env:LOCALAPPDATA\Google\Google Earth\client\googleearth.exe",
+        "$env:ProgramData\Google\Google Earth Pro\client\googleearth.exe"
     )
 
     $installedGe = $null
@@ -272,12 +276,22 @@ function Setup-GoogleEarth {
         }
 
         if (-not $checkInstalled -and $existingGe.Extension -ieq ".exe") {
-            Write-Host "   [i] Menjalankan silent switch fallback untuk $($existingGe.Name)..." -ForegroundColor Yellow
-            $switches = @("OMAHA=1 /S", "/S", "/silent", "/qn", "OMAHA=1 /silent")
+            Write-Host "   [i] Menjalankan silent switch untuk $($existingGe.Name)..." -ForegroundColor Yellow
+            $switches = @("OMAHA=1 /S", "OMAHA=1 /silent", "/S", "/silent", "/qn", "/VERYSILENT /NORESTART")
             foreach ($sw in $switches) {
                 $argList = Convert-ArgsToArray $sw
-                Start-Process -FilePath $existingGe.FullName -ArgumentList $argList -Wait -NoNewWindow -ErrorAction SilentlyContinue
-                Start-Sleep -Seconds 3
+                $pGe = Start-Process -FilePath $existingGe.FullName -ArgumentList $argList -Wait -PassThru -NoNewWindow -ErrorAction SilentlyContinue
+                
+                # Tunggu proses setup background selesai (jika Omaha memicu child process installer)
+                $maxWait = 30
+                while ($maxWait -gt 0) {
+                    $bgInstaller = Get-Process -Name "*googleearth*", "*setup*", "*msiexec*" -ErrorAction SilentlyContinue |
+                                   Where-Object { $_.Path -like "*Google*" -or $_.CommandLine -like "*googleearth*" }
+                    if (-not $bgInstaller) { break }
+                    Start-Sleep -Seconds 2
+                    $maxWait -= 2
+                }
+
                 foreach ($gp in $gePaths) {
                     if (Test-Path $gp) { $checkInstalled = $gp; break }
                 }

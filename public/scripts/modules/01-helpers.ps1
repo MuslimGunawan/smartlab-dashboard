@@ -305,7 +305,8 @@ function Clean-LabDesktopIcons {
         }
     }
 
-    # Bersihkan duplikat shortcut XAMPP Dashboard & phpMyAdmin
+    # Bersihkan shortcut XAMPP Dashboard redundan & duplikat phpMyAdmin
+    $foundPmaUrl = $false
     foreach ($dir in $desktopDirs) {
         $dashUrls = Get-ChildItem -Path $dir -Filter "*XAMPP*Dashboard*.url" -File -ErrorAction SilentlyContinue
         foreach ($du in $dashUrls) {
@@ -314,10 +315,12 @@ function Clean-LabDesktopIcons {
         }
 
         $pmaUrls = Get-ChildItem -Path $dir -Filter "*phpMyAdmin*.url" -File -ErrorAction SilentlyContinue
-        if ($pmaUrls -and $pmaUrls.Count -gt 1) {
-            for ($i = 1; $i -lt $pmaUrls.Count; $i++) {
-                Remove-Item -Path $pmaUrls[$i].FullName -Force -ErrorAction SilentlyContinue
-                Write-Host "   [x] Menghapus duplikat phpMyAdmin shortcut: $($pmaUrls[$i].Name)" -ForegroundColor DarkGray
+        foreach ($pu in $pmaUrls) {
+            if (-not $foundPmaUrl) {
+                $foundPmaUrl = $true
+            } else {
+                Remove-Item -Path $pu.FullName -Force -ErrorAction SilentlyContinue
+                Write-Host "   [x] Menghapus duplikat phpMyAdmin shortcut: $($pu.Name)" -ForegroundColor DarkGray
             }
         }
     }
