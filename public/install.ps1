@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 # SCRIPT OTOMASI INSTALASI SOFTWARE LABORATORIUM TEKNIK INFORMATIKA
 # UNIVERSITAS MALIKUSSALEH (UNIMAL)
 # ==============================================================================
@@ -14,7 +14,7 @@
 #   - Apps/ Folder      : Folder khusus penyimpanan seluruh master installer offline
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.4.9"
+$SCRIPT_CURRENT_VERSION = "3.5.0"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 22 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -207,6 +207,21 @@ function Check-ScriptSelfUpdate {
                 Start-Sleep -Milliseconds 600
 
                 [System.IO.File]::WriteAllText($scriptFile, $remoteContent, [System.Text.Encoding]::UTF8)
+                Write-Host " [*] Mengunduh pembaruan seluruh modul sistem..." -ForegroundColor Cyan
+
+                $modulesDirToUpdate = Split-Path -Parent $scriptFile
+                $modsToUpdate = @('01-helpers.ps1','02-runtimes.ps1','03-webserver.ps1','04-dev-tools.ps1','05-virtual-gis.ps1','06-orchestrator.ps1')
+                $upWc = New-Object System.Net.WebClient
+                foreach ($m in $modsToUpdate) {
+                    $mDest = Join-Path $modulesDirToUpdate $m
+                    $mUrl = "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/modules/$m"
+                    try {
+                        $upWc.DownloadFile($mUrl, $mDest)
+                        Write-Host "     [+] Modul diperbarui: $m" -ForegroundColor DarkCyan
+                    } catch {}
+                }
+                $upWc.Dispose()
+
                 Write-Host " [*] Memverifikasi integritas berkas lokal..." -ForegroundColor Cyan
                 Start-Sleep -Milliseconds 600
 
