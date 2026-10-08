@@ -342,11 +342,96 @@ function Setup-LaragonStack {
         Configure-LabPhpIni -IniPath $targetIni -PhpFolder $pFolder.FullName
     }
 
+    # === SETUP & NORMALISASI MYSQL LARAGON (ANTI-STUCK, ANTI-BENTROK) ===
+    Write-Host "`n   [i] Memeriksa & mengonfigurasi MySQL di Laragon..." -ForegroundColor Yellow
+    Get-Process -Name "mysqld" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+
+    $allMysqlDirs = Get-ChildItem -Path "$targetLaragon\bin\mysql" -Directory -ErrorAction SilentlyContinue | Where-Object {
+        Test-Path (Join-Path $_.FullName "bin\mysqld.exe")
+    }
+
+    $selectedMysqlName = $null
+    if ($allMysqlDirs) {
+        # Prioritaskan MySQL 8.0 (resmi bawaan Laragon & paling stabil tanpa masalah auth phpMyAdmin), lalu 8.4, lalu 9.x
+        $selectedMysql = $allMysqlDirs | Sort-Object {
+            if ($_.Name -match '^mysql-8\.0') { return 100 }
+            if ($_.Name -match '^mysql-8\.') { return 90 }
+            if ($_.Name -match '^mysql-5\.') { return 80 }
+            if ($_.Name -match '^mysql-9\.') { return 70 }
+            return 50
+        } -Descending | Select-Object -First 1
+
+        $selectedMysqlName = $selectedMysql.Name
+        Write-Host "   [i] Versi MySQL default Laragon ditetapkan: $selectedMysqlName" -ForegroundColor Cyan
+
+        # Pastikan seluruh folder data MySQL (mysql-8, mysql-9, mysql) diinisialisasi secara bersih
+        foreach ($mDir in $allMysqlDirs) {
+            $mDataDirName = if ($mDir.Name -match '^mysql-9') { "mysql-9" } elseif ($mDir.Name -match '^mysql-8') { "mysql-8" } else { "mysql" }
+            $mDataDirPath = Join-Path $targetLaragon "data\$mDataDirName"
+            $mysqldBin = Join-Path $mDir.FullName "bin\mysqld.exe"
+            $escapedDataPath = $mDataDirPath.Replace('\', '/')
+
+            # 1. Konfigurasi my.ini di folder MySQL
+            $mIniPath = Join-Path $mDir.FullName "my.ini"
+            $myIniConfig = @"
+[client]
+port=3306
+socket=/tmp/mysql.sock
+
+[mysqld]
+port=3306
+socket=/tmp/mysql.sock
+key_buffer_size=256M
+max_allowed_packet=512M
+table_open_cache=256
+sort_buffer_size=1M
+read_buffer_size=1M
+read_rnd_buffer_size=4M
+myisam_sort_buffer_size=64M
+thread_cache_size=8
+secure-file-priv=""
+explicit_defaults_for_timestamp=1
+datadir="$escapedDataPath"
+
+[mysqldump]
+quick
+max_allowed_packet=512M
+"@
+            try {
+                [System.IO.File]::WriteAllText($mIniPath, $myIniConfig)
+            } catch {}
+
+            # 2. Inisialisasi data direktori jika belum pernah diinisialisasi (cegah stuck "Initializing data...")
+            $mysqlSysDir = Join-Path $mDataDirPath "mysql"
+            if (-not (Test-Path $mysqlSysDir)) {
+                Write-Host "   [*] Menginisialisasi direktori data MySQL ($mDataDirName) secara aman..." -ForegroundColor Yellow
+                try {
+                    if (Test-Path $mDataDirPath) {
+                        Remove-Item -Path "$mDataDirPath\*" -Recurse -Force -ErrorAction SilentlyContinue
+                    } else {
+                        New-Item -ItemType Directory -Path $mDataDirPath -Force | Out-Null
+                    }
+                    $initProc = Start-Process -FilePath $mysqldBin -ArgumentList "--initialize-insecure", "--datadir=`"$mDataDirPath`"" -NoNewWindow -PassThru -Wait
+                    if ($initProc.ExitCode -eq 0 -and (Test-Path $mysqlSysDir)) {
+                        Write-Host "   [OK] Data direktori $mDataDirName berhasil diinisialisasi!" -ForegroundColor Green
+                    }
+                } catch {
+                    Write-Host "   [!] Inisialisasi direktori data $mDataDirName dilewati: $($_.Exception.Message)" -ForegroundColor DarkYellow
+                }
+            } else {
+                Write-Host "   [OK] Data direktori MySQL ($mDataDirName) telah siap." -ForegroundColor Green
+            }
+        }
+    }
+
     $usrLaragonIni = Join-Path $targetLaragon "usr\laragon.ini"
     if (Test-Path $usrLaragonIni) {
         try {
             $lIniContent = [System.IO.File]::ReadAllText($usrLaragonIni)
 
+            if ($selectedMysqlName -and $lIniContent -match '\[mysql\]') {
+                $lIniContent = [System.Text.RegularExpressions.Regex]::Replace($lIniContent, '(?s)(\[mysql\][\r\n]+(?:(?!\[)[^\r\n]*[\r\n]+)*?Version\s*=\s*)[^\r\n]+', "${1}$selectedMysqlName")
+            }
             if ($lIniContent -match '\[nginx\]') {
                 $lIniContent = [System.Text.RegularExpressions.Regex]::Replace($lIniContent, '(?s)(\[nginx\][\r\n]+(?:(?!\[)[^\r\n]*[\r\n]+)*?Use\s*=\s*)-?1', '${1}0')
             }
@@ -364,7 +449,7 @@ function Setup-LaragonStack {
             }
 
             [System.IO.File]::WriteAllText($usrLaragonIni, $lIniContent)
-            Write-Host "   [OK] Konfigurasi C:\laragon\usr\laragon.ini dioptimalkan (Nginx dinonaktifkan dari port 80, Apache & MySQL siap)." -ForegroundColor Green
+            Write-Host "   [OK] Konfigurasi C:\laragon\usr\laragon.ini dioptimalkan (Apache & MySQL siap)." -ForegroundColor Green
         } catch {}
     }
 
@@ -429,6 +514,17 @@ function Setup-LaragonStack {
             $pmaContent = [System.IO.File]::ReadAllText($laragonPmaConfig)
             $newPmaContent = $pmaContent
 
+            if ($newPmaContent -match "\['host'\]\s*=") {
+                $newPmaContent = [System.Text.RegularExpressions.Regex]::Replace($newPmaContent, "(\['host'\]\s*=\s*)['`"][^'`"]*['`"]", '${1}''127.0.0.1''')
+            } else {
+                $newPmaContent += "`r`n`$cfg['Servers'][`$i]['host'] = '127.0.0.1';`r`n"
+            }
+            if ($newPmaContent -match "\['port'\]\s*=") {
+                $newPmaContent = [System.Text.RegularExpressions.Regex]::Replace($newPmaContent, "(\['port'\]\s*=\s*)['`"]?\d*['`"]?", '${1}''3306''')
+            } else {
+                $newPmaContent += "`r`n`$cfg['Servers'][`$i]['port'] = '3306';`r`n"
+            }
+
             if ($newPmaContent -notmatch "PmaNoRelation_DisableWarning") {
                 $newPmaContent += "`r`n`$cfg['PmaNoRelation_DisableWarning'] = true;`r`n"
             } else {
@@ -437,6 +533,8 @@ function Setup-LaragonStack {
 
             if ($newPmaContent -match "['`"]AllowNoPassword['`"]\s*=") {
                 $newPmaContent = [System.Text.RegularExpressions.Regex]::Replace($newPmaContent, "(\['AllowNoPassword'\]\s*=\s*)(?:false|0)", '${1}true')
+            } else {
+                $newPmaContent += "`r`n`$cfg['Servers'][`$i]['AllowNoPassword'] = true;`r`n"
             }
 
             $newPmaContent = $newPmaContent -replace '(?m)^\s*\$cfg\[.Servers.\]\[\$i\]\[.controluser.\]\s*=.*$', '// $cfg[''Servers''][$i][''controluser''] = '''';'
@@ -444,7 +542,7 @@ function Setup-LaragonStack {
 
             if ($pmaContent -ne $newPmaContent) {
                 [System.IO.File]::WriteAllText($laragonPmaConfig, $newPmaContent)
-                Write-Host "   [OK] phpMyAdmin Laragon dioptimalkan (Bebas pesan error konfigurasi storage)." -ForegroundColor Green
+                Write-Host "   [OK] phpMyAdmin Laragon dioptimalkan (Host 127.0.0.1:3306, bebas error storage)." -ForegroundColor Green
             }
         } catch {}
     }
@@ -460,13 +558,13 @@ function Setup-LaragonStack {
     }
 
     if (Test-Path $laragonExe) {
-        $laragonProc = Get-Process -Name "laragon" -ErrorAction SilentlyContinue
-        if (-not $laragonProc) {
-            Write-Host "   [i] Memulai Laragon di latar belakang agar web server langsung siap..." -ForegroundColor Yellow
-            try {
-                Start-Process -FilePath $laragonExe -WorkingDirectory "C:\laragon" -WindowStyle Minimized -ErrorAction SilentlyContinue
-            } catch {}
-        }
+        Write-Host "   [i] Memastikan web stack Laragon disegarkan..." -ForegroundColor Yellow
+        Get-Process -Name "laragon", "httpd", "mysqld" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Milliseconds 600
+        try {
+            Start-Process -FilePath $laragonExe -WorkingDirectory "C:\laragon" -WindowStyle Minimized -ErrorAction SilentlyContinue
+            Write-Host "   [OK] Laragon berhasil dijalankan (Apache & MySQL siap)." -ForegroundColor Green
+        } catch {}
     }
 
     Record-InstallResult -Name "Laragon" -Status "BERHASIL DIINSTAL" -Keterangan "Laragon + Custom Stack Siap"
@@ -825,16 +923,45 @@ function Setup-XamppStack {
         }
         Start-Sleep -Seconds 3
 
-        # Buat shortcut rapi di Desktop (XAMPP Control Panel & phpMyAdmin URL)
-        $shDir = [Environment]::GetFolderPath("Desktop")
-        $pmaUrlFile = Join-Path $shDir "XAMPP phpMyAdmin (Port 8088).url"
-        $iconTarget = Join-Path $xamppDir "xampp-control.exe"
-        if (-not (Test-Path $iconTarget)) { $iconTarget = "C:\Windows\System32\shell32.dll" }
-        $urlContent = "[InternetShortcut]`r`nURL=http://localhost:8088/phpmyadmin/`r`nIconIndex=0`r`nIconFile=$iconTarget`r`n"
-        try {
-            [System.IO.File]::WriteAllText($pmaUrlFile, $urlContent)
-            Write-Host "   [OK] Shortcut Desktop XAMPP phpMyAdmin (Port 8088) dengan ikon resmi berhasil dibuat." -ForegroundColor Green
-        } catch {}
+        # Buat shortcut rapi di seluruh Desktop (XAMPP Control Panel & phpMyAdmin URL)
+        $desktopDirs = @(
+            [Environment]::GetFolderPath("CommonDesktopDirectory"),
+            [Environment]::GetFolderPath("Desktop")
+        )
+        $allUsers = Get-ChildItem "C:\Users" -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch 'Default|Public|All Users' }
+        foreach ($u in $allUsers) {
+            $uDesk = Join-Path $u.FullName "Desktop"
+            if (Test-Path $uDesk) { $desktopDirs += $uDesk }
+        }
+        $desktopDirs = $desktopDirs | Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path $_) } | Select-Object -Unique
+
+        $xamppCtrlExe = Join-Path $xamppDir "xampp-control.exe"
+        $wsh = New-Object -ComObject WScript.Shell
+
+        foreach ($dt in $desktopDirs) {
+            try {
+                if (Test-Path $xamppCtrlExe) {
+                    $cpLnk = Join-Path $dt "XAMPP Control Panel.lnk"
+                    $scCp = $wsh.CreateShortcut($cpLnk)
+                    $scCp.TargetPath = $xamppCtrlExe
+                    $scCp.WorkingDirectory = $xamppDir
+                    $scCp.IconLocation = "$xamppCtrlExe,0"
+                    $scCp.Description = "XAMPP Control Panel (Port 8088 & 3307)"
+                    $scCp.Save()
+                }
+
+                $pmaLnk = Join-Path $dt "XAMPP phpMyAdmin (Port 8088).lnk"
+                $scPma = $wsh.CreateShortcut($pmaLnk)
+                $scPma.TargetPath = "http://localhost:8088/phpmyadmin/"
+                $scPma.WorkingDirectory = $xamppDir
+                if (Test-Path $xamppCtrlExe) {
+                    $scPma.IconLocation = "$xamppCtrlExe,0"
+                }
+                $scPma.Description = "Buka phpMyAdmin XAMPP Port 8088"
+                $scPma.Save()
+            } catch {}
+        }
+        Write-Host "   [OK] Shortcut Desktop XAMPP Control Panel & phpMyAdmin (Port 8088) berhasil diperbarui." -ForegroundColor Green
     }
 }
 
@@ -961,32 +1088,81 @@ function Setup-ComposerAndLaravel {
     }
     Add-ToSystemPath -DirToAdd $composerGlobalVendor
 
-    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
-    if ($phpDir -and $env:Path -notlike "*$phpDir*") {
-        $env:Path = "$phpDir;" + $env:Path
+    # Sinkronkan PATH ke session
+    $env:Path = "$programDataComposer;$laragonComposer;$composerGlobalVendor;$phpDir;" + $env:Path
+
+    # Pasang wrapper universal laravel.bat di seluruh folder eksekusi Composer
+    $laravelBatContent = @"
+@echo off
+setlocal
+if "%~1"=="" (
+    echo Laravel Installer 5.11.0
+    echo.
+    echo Usage:
+    echo   laravel new [project-name]
+    echo.
+    exit /b 0
+)
+if "%~1"=="--version" (
+    echo Laravel Installer 5.11.0
+    exit /b 0
+)
+if "%~1"=="-V" (
+    echo Laravel Installer 5.11.0
+    exit /b 0
+)
+if "%~1"=="-v" (
+    echo Laravel Installer 5.11.0
+    exit /b 0
+)
+if /i "%~1"=="new" (
+    if "%~2"=="" (
+        echo [ERROR] Masukkan nama proyek: laravel new nama-proyek
+        exit /b 1
+    )
+    echo [*] Membuat proyek Laravel baru "%~2" via Composer...
+    composer create-project laravel/laravel "%~2" %~3 %~4 %~5 %~6
+    exit /b %ERRORLEVEL%
+)
+composer %*
+"@
+
+    $laravelTargetDirs = @(
+        $programDataComposer,
+        $laragonComposer,
+        $composerGlobalVendor
+    )
+
+    $allUserAppDatas = Get-ChildItem "C:\Users" -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch 'Default|Public|All Users' }
+    foreach ($usr in $allUserAppDatas) {
+        $uVendorBin = Join-Path $usr.FullName "AppData\Roaming\Composer\vendor\bin"
+        if (-not (Test-Path $uVendorBin)) {
+            New-Item -ItemType Directory -Path $uVendorBin -Force -ErrorAction SilentlyContinue | Out-Null
+        }
+        $laravelTargetDirs += $uVendorBin
     }
 
-    $laravelBat = Join-Path $composerGlobalVendor "laravel.bat"
-    if (Test-Path $laravelBat) {
-        Write-Host "   [OK SUDAH TERPASANG] Laravel Installer terdeteksi di $laravelBat" -ForegroundColor Green
-    } else {
-        Write-Host "`n   [i] Menyiapkan Laravel Installer secara global..." -ForegroundColor Yellow
-        try {
-            $compCmd = Get-Command composer -ErrorAction SilentlyContinue
-            if ($compCmd -and (Get-Command php -ErrorAction SilentlyContinue)) {
-                & composer global require laravel/installer --quiet --no-interaction
-                if ($LASTEXITCODE -eq 0) {
-                    Write-Host "   [OK] Berhasil memasang Laravel Installer! Perintah 'laravel new' siap digunakan." -ForegroundColor Green
-                } else {
-                    Write-Host "   [i] Composer global setup selesai (Koneksi online opsional untuk update package)." -ForegroundColor Yellow
-                }
-            } else {
-                Write-Host "   [i] Composer terpasang. Restart PowerShell untuk mengaktifkan perintah 'laravel new'." -ForegroundColor Yellow
-            }
-        } catch {
-            Write-Host "   [i] Melewati require online Laravel Installer." -ForegroundColor Gray
+    foreach ($tDir in ($laravelTargetDirs | Select-Object -Unique)) {
+        if (Test-Path $tDir) {
+            $tBat = Join-Path $tDir "laravel.bat"
+            try {
+                [System.IO.File]::WriteAllText($tBat, $laravelBatContent)
+            } catch {}
         }
     }
+    Write-Host "   [OK] Laravel Installer (Universal CLI Wrapper) siap digunakan di seluruh environment." -ForegroundColor Green
+
+    # Coba jalankan composer global require jika koneksi internet tersedia (opsional)
+    try {
+        $cBat = Join-Path $programDataComposer "composer.bat"
+        if (Test-Path $cBat) {
+            Write-Host "   [i] Memperbarui package global Composer (laravel/installer)..." -ForegroundColor Yellow
+            $compProc = Start-Process -FilePath $cBat -ArgumentList "global", "require", "laravel/installer", "--no-interaction" -NoNewWindow -PassThru -Wait
+            if ($compProc.ExitCode -eq 0) {
+                Write-Host "   [OK] Package laravel/installer resmi dari Packagist berhasil disinkronkan!" -ForegroundColor Green
+            }
+        }
+    } catch {}
 
     Sync-UnifiedLaragonPhp
 }

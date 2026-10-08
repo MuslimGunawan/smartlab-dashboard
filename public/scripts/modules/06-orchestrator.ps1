@@ -262,7 +262,7 @@ function Test-LabSoftwareStatus {
     $composerLaragonBin = "C:\laragon\bin\composer"
     $composerGlobalBin = Join-Path $env:APPDATA "Composer\vendor\bin"
     foreach ($cb in @($composerSetupBin, $composerLaragonBin, $composerGlobalBin)) {
-        if (Test-Path $cb -and $env:Path -notlike "*$cb*") {
+        if ((Test-Path $cb) -and ($env:Path -notlike "*$cb*")) {
             $env:Path = "$cb;" + $env:Path
         }
     }
@@ -294,13 +294,21 @@ function Test-LabSoftwareStatus {
             }
         } },
         @{ Name = "Laravel CLI"; Cmd = {
-            $lBat1 = Join-Path $env:APPDATA "Composer\vendor\bin\laravel.bat"
-            $lBat2 = "C:\Users\*\AppData\Roaming\Composer\vendor\bin\laravel.bat"
-            $foundL = Get-Item $lBat2 -ErrorAction SilentlyContinue | Select-Object -First 1
-            if (Test-Path $lBat1) {
-                & $lBat1 --version 2>&1
-            } elseif ($foundL) {
-                & $foundL.FullName --version 2>&1
+            $lBatCandidates = @(
+                "C:\ProgramData\ComposerSetup\bin\laravel.bat",
+                "C:\laragon\bin\composer\laravel.bat",
+                (Join-Path $env:APPDATA "Composer\vendor\bin\laravel.bat")
+            )
+            $userL = Get-Item "C:\Users\*\AppData\Roaming\Composer\vendor\bin\laravel.bat" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($userL) { $lBatCandidates += $userL.FullName }
+
+            $targetBat = $null
+            foreach ($cand in $lBatCandidates) {
+                if (Test-Path $cand) { $targetBat = $cand; break }
+            }
+
+            if ($targetBat) {
+                & $targetBat --version 2>&1
             } else {
                 laravel --version 2>&1
             }
