@@ -31,7 +31,7 @@
 #  22. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.4.4"
+$SCRIPT_CURRENT_VERSION = "3.4.5"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 22 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -1389,6 +1389,49 @@ function Setup-LaragonStack {
         "https://drive.google.com/file/d/1majSE8h7bR_tRFFz2euHBP3-CNtzigP6/view?usp=sharing"
     )
 
+    # 0. BEBASKAN PORT 80 SEJAK AWAL DARI IIS, HTTP.SYS, & PROSES PENGHALANG
+    Write-Host "`n   [i] Memeriksa & membebaskan Port 80 untuk Apache Laragon..." -ForegroundColor Yellow
+    try {
+        # 1. Hentikan & nonaktifkan service IIS / Web Publishing Windows
+        $iisServices = @("W3SVC", "WAS", "IISADMIN", "PeerDistSvc", "iphlpsvc")
+        foreach ($srv in $iisServices) {
+            $s = Get-Service -Name $srv -ErrorAction SilentlyContinue
+            if ($s -and ($s.Status -eq "Running" -or $s.StartType -ne "Disabled")) {
+                Write-Host "   [!] Menonaktifkan service Windows IIS/Web ($srv) yang mengunci Port 80 (PID 4)..." -ForegroundColor Yellow
+                & net stop $srv /y 2>$null | Out-Null
+                Stop-Service -Name $srv -Force -ErrorAction SilentlyContinue
+                Set-Service -Name $srv -StartupType Disabled -ErrorAction SilentlyContinue
+            }
+        }
+
+        # 2. Nonaktifkan HTTP.sys driver binding otomatis jika port 80 masih diikat oleh PID 4 (System)
+        try {
+            & net stop http /y 2>$null | Out-Null
+            & sc.exe config http start= demand 2>$null | Out-Null
+        } catch {}
+
+        # 3. Cari proses selain Apache Laragon yang sedang mendengarkan di port 80 dan hentikan
+        try {
+            $p80Lines = netstat -ano | Select-String -Pattern ":80\s+.*LISTENING\s+(\d+)"
+            foreach ($line in $p80Lines) {
+                if ($line.Matches[0].Groups[1].Value) {
+                    $pidToKill = [int]$line.Matches[0].Groups[1].Value
+                    if ($pidToKill -gt 4) {
+                        $pObj = Get-Process -Id $pidToKill -ErrorAction SilentlyContinue
+                        if ($pObj -and $pObj.Path -notlike "C:\laragon\*") {
+                            Write-Host "   [!] Menutup proses yang mengikat Port 80: $($pObj.Name) (PID: $pidToKill)..." -ForegroundColor Yellow
+                            Stop-Process -Id $pidToKill -Force -ErrorAction SilentlyContinue
+                        }
+                    }
+                }
+            }
+        } catch {}
+
+        # 4. Tutup proses pihak ketiga yang sering mengambil Port 80
+        Get-Process -Name "SkypeApp", "Skype" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Write-Host "   [OK] Port 80 telah dibebaskan dari service bawaan Windows (IIS/W3SVC/HTTP.sys) dan siap untuk Apache Laragon." -ForegroundColor Green
+    } catch {}
+
     if (Test-Path $laragonExe) {
         Write-Host "   [OK SUDAH TERPASANG] Laragon terdeteksi di $laragonExe." -ForegroundColor Green
     } else {
@@ -1668,29 +1711,6 @@ function Setup-LaragonStack {
         } catch {}
     }
 
-    # 5.0.1 BEBASKAN PORT 80 DARI PROSES SISTEM (W3SVC / IIS / HTTP.SYS / PROSES LAIN DENGAN PID 4)
-    # PID 4 di Windows adalah SYSTEM / HTTP.sys yang biasanya dipicu oleh World Wide Web Publishing Service (W3SVC/IIS)
-    Write-Host "`n   [i] Memeriksa & membebaskan Port 80 untuk Apache Laragon..." -ForegroundColor Yellow
-    try {
-        $iisServices = @("W3SVC", "WAS", "IISADMIN")
-        foreach ($srv in $iisServices) {
-            $s = Get-Service -Name $srv -ErrorAction SilentlyContinue
-            if ($s -and ($s.Status -eq "Running" -or $s.StartType -ne "Disabled")) {
-                Write-Host "   [!] Menonaktifkan service Windows IIS/Web ($srv) yang mengunci Port 80 (PID 4)..." -ForegroundColor Yellow
-                Stop-Service -Name $srv -Force -ErrorAction SilentlyContinue
-                Set-Service -Name $srv -StartupType Disabled -ErrorAction SilentlyContinue
-            }
-        }
-        # Hentikan BranchCache jika aktif mengikat Port 80
-        $bc = Get-Service -Name "PeerDistSvc" -ErrorAction SilentlyContinue
-        if ($bc -and $bc.Status -eq "Running") {
-            Stop-Service -Name "PeerDistSvc" -Force -ErrorAction SilentlyContinue
-            Set-Service -Name "PeerDistSvc" -StartupType Manual -ErrorAction SilentlyContinue
-        }
-        # Tutup proses pihak ketiga atau web server lain yang mungkin memegang port 80
-        Get-Process -Name "SkypeApp", "Skype" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-        Write-Host "   [OK] Port 80 telah dibebaskan dari service bawaan Windows (IIS/W3SVC) dan siap untuk Apache Laragon." -ForegroundColor Green
-    } catch {}
 
     # 5.1 KONFIGURASI TEPAT SERVICE LARAGON (laragon.ini) AGAR TIDAK BENTROK PORT & SERVICE SIAP PAKAI
     $usrLaragonIni = Join-Path $targetLaragon "usr\laragon.ini"
@@ -2124,13 +2144,26 @@ function Setup-XamppStack {
                 if ($newIniTxt -notmatch '(?m)^MySQL\s*=\s*3307') {
                     $newIniTxt = $newIniTxt -replace '(?m)(\[ServicePorts\])', "`$1`r`nMySQL = 3307"
                 }
+            } else {
+                $newIniTxt += "`r`n[ServicePorts]`r`nApache = 8088`r`nApacheSSL = 8444`r`nMySQL = 3307`r`n"
             }
 
-            if ($iniTxt -ne $newIniTxt) {
-                [System.IO.File]::WriteAllText($xamppIni, $newIniTxt)
-                Write-Host "   [OK] Port pada XAMPP Control Panel disinkronkan ke 8088/8444/3307 & Admin diarahkan ke http://localhost:8088." -ForegroundColor Green
-            }
+            [System.IO.File]::WriteAllText($xamppIni, $newIniTxt)
+            Write-Host "   [OK] Port pada XAMPP Control Panel disinkronkan ke 8088/8444/3307 & Admin diarahkan ke http://localhost:8088." -ForegroundColor Green
         }
+
+        # F. Buat shortcut mandiri untuk Admin XAMPP Dashboard & phpMyAdmin di Desktop agar mahasiswa/aslab bisa langsung klik
+        $shDir = [Environment]::GetFolderPath("Desktop")
+        $wsh = New-Object -ComObject WScript.Shell
+        try {
+            $dashSc = $wsh.CreateShortcut((Join-Path $shDir "XAMPP Dashboard (Port 8088).url"))
+            $dashSc.TargetPath = "http://localhost:8088/dashboard/"
+            $dashSc.Save()
+
+            $pmaSc = $wsh.CreateShortcut((Join-Path $shDir "XAMPP phpMyAdmin (Port 8088).url"))
+            $pmaSc.TargetPath = "http://localhost:8088/phpmyadmin/"
+            $pmaSc.Save()
+        } catch {}
 
         Write-Host "   [OK] XAMPP, Laragon, Laravel, Vite & Next.js kini aman berjalan berdampingan tanpa bentrok port!" -ForegroundColor Green
     }
@@ -2612,58 +2645,66 @@ function Setup-GoogleEarth {
         return
     }
 
-    # Direct official standalone full offline installer CDN mirrors
-    $googleEarthMirrors = @(
-        "https://dl.google.com/release2/Earth/fnndz6bt2usy3ez2s7f3i6aq6i_7.3.7.1327/googleearth-win-pro-7.3.7.1327-x64.exe",
-        "https://dl.google.com/dl/earth/client/advanced/current/googleearthprowin-x64.exe",
-        "https://dl.google.com/earth/client/advanced/current/googleearthprowin-x64.exe",
-        "https://dl.google.com/dl/earth/client/advanced/current/googleearthprowin.exe"
-    )
-
-    # 1. Jalankan instalasi cerdas (ID Winget resmi: Google.EarthPro)
-    Install-AppSmart -Name "Google Earth Pro" `
-                     -FilePattern @("*googleearth-win-pro*.exe", "*googleearthprowin*.exe", "*GoogleEarth*.exe", "*GoogleEarthPro*.exe", "*googleearth*.exe", "*googleearth*.msi") `
-                     -DownloadUrls $googleEarthMirrors `
-                     -SilentArgs "OMAHA=1 /S" `
-                     -WingetId "Google.EarthPro" `
-                     -CheckPath $gePaths
-
-    # 2. Verifikasi & Fallback Khusus jika installer offline membutuhkan parameter alternatif atau ekstraksi MSI
-    $checkInstalled = $null
-    foreach ($gp in $gePaths) {
-        if (Test-Path $gp) { $checkInstalled = $gp; break }
+    # Cari file installer offline yang mungkin sudah ada di Apps/
+    $existingGe = Get-ChildItem -Path $AppsDir -Filter "*googleearth*.exe" -File -Recurse -ErrorAction SilentlyContinue |
+                  Where-Object { $_.Name -notmatch "unins" -and $_.Length -gt 10485760 } | Select-Object -First 1
+    if (-not $existingGe) {
+        $existingGe = Get-ChildItem -Path $AppsDir -Filter "*googleearth*.msi" -File -Recurse -ErrorAction SilentlyContinue |
+                      Where-Object { $_.Length -gt 10485760 } | Select-Object -First 1
     }
 
-    if (-not $checkInstalled) {
-        # Cari file installer offline yang sudah ada di Apps/
-        $offlineGe = Get-ChildItem -Path $AppsDir -Filter "*googleearth*.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    # Jika file belum ada di Apps/, unduh installer standalone offline resmi Google Earth Pro
+    if (-not $existingGe) {
+        $googleEarthMirrors = @(
+            "https://dl.google.com/release2/Earth/fnndz6bt2usy3ez2s7f3i6aq6i_7.3.7.1327/googleearth-win-pro-7.3.7.1327-x64.exe",
+            "https://dl.google.com/dl/earth/client/advanced/current/googleearthprowin-x64.exe",
+            "https://dl.google.com/earth/client/advanced/current/googleearthprowin-x64.exe",
+            "https://dl.google.com/dl/earth/client/advanced/current/googleearthprowin.exe"
+        )
+        $destExe = Join-Path $AppsDir "googleearth-win-pro-x64.exe"
+        Write-Host "   [i] Mengunduh standalone offline installer Google Earth Pro..." -ForegroundColor Yellow
+        $dlGe = Download-FileWithFastMirrors -Urls $googleEarthMirrors -DestinationPath $destExe -ActivityTitle "Mengunduh Google Earth Pro"
+        if ($dlGe -and (Test-Path $destExe)) {
+            $existingGe = Get-Item $destExe -ErrorAction SilentlyContinue
+        }
+    }
+
+    $sevenZipExe = "C:\Program Files\7-Zip\7z.exe"
+    if (-not (Test-Path $sevenZipExe)) { $sevenZipExe = "C:\Program Files (x86)\7-Zip\7z.exe" }
+
+    # STRATEGI 1: Ekstraksi MSI dari file .exe menggunakan 7-Zip & instalasi via msiexec (Paling handal di Windows Lab)
+    if ($existingGe) {
+        Write-Host "   [i] Memproses installer Google Earth Pro: $($existingGe.Name)..." -ForegroundColor Cyan
         
-        # Ekstrak MSI jika 7-Zip tersedia
-        $sevenZipExe = "C:\Program Files\7-Zip\7z.exe"
-        if (-not (Test-Path $sevenZipExe)) { $sevenZipExe = "C:\Program Files (x86)\7-Zip\7z.exe" }
-        if ($offlineGe -and (Test-Path $sevenZipExe)) {
-            Write-Host "   [i] Mengekstrak paket MSI Google Earth Pro dengan 7-Zip..." -ForegroundColor Yellow
+        if ($existingGe.Extension -ieq ".msi") {
+            Write-Host "   [i] Memasang MSI Google Earth Pro langsung..." -ForegroundColor Cyan
+            Start-Process -FilePath "msiexec.exe" -ArgumentList "/i `"$($existingGe.FullName)`" /qn /norestart" -Wait -NoNewWindow
+        } elseif (Test-Path $sevenZipExe) {
+            Write-Host "   [i] Membongkar installer .exe Google Earth Pro untuk mengambil file MSI..." -ForegroundColor Yellow
             $extractGeDir = Join-Path $AppsDir "GoogleEarth_Extracted"
-            & "$sevenZipExe" x "$($offlineGe.FullName)" "-o$extractGeDir" -y | Out-Null
+            if (-not (Test-Path $extractGeDir)) { New-Item -ItemType Directory -Path $extractGeDir -Force | Out-Null }
+            & "$sevenZipExe" x "$($existingGe.FullName)" "-o$extractGeDir" -y | Out-Null
+            
             $extractedMsi = Get-ChildItem -Path $extractGeDir -Filter "*.msi" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($extractedMsi) {
-                Write-Host "   [i] Memasang MSI Google Earth Pro: $($extractedMsi.Name)..." -ForegroundColor Cyan
-                Start-Process msiexec.exe -ArgumentList "/i `"$($extractedMsi.FullName)`" /qn /norestart" -Wait
-                Start-Sleep -Seconds 2
-                foreach ($gp in $gePaths) {
-                    if (Test-Path $gp) { $checkInstalled = $gp; break }
-                }
+                Write-Host "   [i] Menjalankan MSI resmi: $($extractedMsi.Name)..." -ForegroundColor Green
+                Start-Process -FilePath "msiexec.exe" -ArgumentList "/i `"$($extractedMsi.FullName)`" /qn /norestart" -Wait -NoNewWindow
             }
         }
+        
+        Start-Sleep -Seconds 2
+        foreach ($gp in $gePaths) {
+            if (Test-Path $gp) { $checkInstalled = $gp; break }
+        }
 
-        # Jika masih belum terpasang, coba langsung berbagai switch eksekusi
-        if (-not $checkInstalled -and $offlineGe) {
-            Write-Host "   [i] Menjalankan fallback silent setup untuk $($offlineGe.Name)..." -ForegroundColor Yellow
-            $altSwitches = @("OMAHA=1 /S", "/silent", "/s", "OMAHA=1 /silent", "/qn")
-            foreach ($sw in $altSwitches) {
+        # STRATEGI 2: Fallback silent switches jika MSI belum selesai terpasang
+        if (-not $checkInstalled -and $existingGe.Extension -ieq ".exe") {
+            Write-Host "   [i] Menjalankan silent switch fallback untuk $($existingGe.Name)..." -ForegroundColor Yellow
+            $switches = @("OMAHA=1 /S", "/S", "/silent", "/qn", "OMAHA=1 /silent")
+            foreach ($sw in $switches) {
                 $argList = Convert-ArgsToArray $sw
-                Start-Process -FilePath $offlineGe.FullName -ArgumentList $argList -Wait -ErrorAction SilentlyContinue
-                Start-Sleep -Seconds 2
+                Start-Process -FilePath $existingGe.FullName -ArgumentList $argList -Wait -NoNewWindow -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 3
                 foreach ($gp in $gePaths) {
                     if (Test-Path $gp) { $checkInstalled = $gp; break }
                 }
@@ -2672,9 +2713,45 @@ function Setup-GoogleEarth {
         }
     }
 
+    # STRATEGI 3: Fallback terakhir ke Winget jika installer lokal belum berhasil
+    if (-not $checkInstalled -and (Test-WingetAvailable)) {
+        Write-Host "   [i] Mencoba pemasangan Google Earth Pro via Winget..." -ForegroundColor Yellow
+        try {
+            & winget install --id "Google.EarthPro" --source winget -e --silent --accept-source-agreements --accept-package-agreements --disable-interactivity 2>$null
+            Start-Sleep -Seconds 3
+            foreach ($gp in $gePaths) {
+                if (Test-Path $gp) { $checkInstalled = $gp; break }
+            }
+        } catch {}
+    }
+
+    # STRATEGI 4: Periksa juga Windows Registry jika executable berada di subfolder versi lain
+    if (-not $checkInstalled) {
+        $regPaths = @(
+            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\googleearth.exe",
+            "HKLM:\SOFTWARE\Google\Google Earth Pro",
+            "HKLM:\SOFTWARE\WOW6432Node\Google\Google Earth Pro"
+        )
+        foreach ($rp in $regPaths) {
+            if (Test-Path $rp) {
+                $val = (Get-ItemProperty -Path $rp -ErrorAction SilentlyContinue)."(Default)"
+                if (-not $val) { $val = (Get-ItemProperty -Path $rp -ErrorAction SilentlyContinue).InstallLocation }
+                if ($val) {
+                    if (Test-Path $val -PathType Leaf) { $checkInstalled = $val; break }
+                    elseif (Test-Path (Join-Path $val "client\googleearth.exe")) { $checkInstalled = Join-Path $val "client\googleearth.exe"; break }
+                    elseif (Test-Path (Join-Path $val "googleearth.exe")) { $checkInstalled = Join-Path $val "googleearth.exe"; break }
+                }
+            }
+        }
+    }
+
     if ($checkInstalled) {
         Create-AppShortcut -TargetExe $checkInstalled -ShortcutName "Google Earth Pro"
         Record-InstallResult -Name "Google Earth Pro" -Status "BERHASIL DIINSTAL" -Keterangan "Terpasang & shortcut dibuat"
+        Write-Host "   [OK] Google Earth Pro berhasil dipasang: $checkInstalled" -ForegroundColor Green
+    } else {
+        Write-Host "   [!] Google Earth Pro belum berhasil terpasang otomatis." -ForegroundColor Yellow
+        Record-InstallResult -Name "Google Earth Pro" -Status "GAGAL" -Keterangan "Gagal dieksekusi atau installer tidak kompatibel"
     }
 }
 
