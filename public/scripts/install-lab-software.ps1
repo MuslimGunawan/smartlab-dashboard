@@ -31,7 +31,7 @@
 #  22. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.4.2"
+$SCRIPT_CURRENT_VERSION = "3.4.3"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 22 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -1667,6 +1667,31 @@ function Setup-LaragonStack {
             [System.IO.File]::WriteAllText($pIni.FullName, $iniText)
         } catch {}
     }
+
+    # 5.0.1 BEBASKAN PORT 80 DARI PROSES SISTEM (W3SVC / IIS / HTTP.SYS / PROSES LAIN DENGAN PID 4)
+    # PID 4 di Windows adalah SYSTEM / HTTP.sys yang biasanya dipicu oleh World Wide Web Publishing Service (W3SVC/IIS)
+    Write-Host "`n   [i] Memeriksa & membebaskan Port 80 untuk Apache Laragon..." -ForegroundColor Yellow
+    try {
+        $iisServices = @("W3SVC", "WAS", "IISADMIN")
+        foreach ($srv in $iisServices) {
+            $s = Get-Service -Name $srv -ErrorAction SilentlyContinue
+            if ($s -and ($s.Status -eq "Running" -or $s.StartType -ne "Disabled")) {
+                Write-Host "   [!] Menonaktifkan service Windows IIS/Web ($srv) yang mengunci Port 80 (PID 4)..." -ForegroundColor Yellow
+                Stop-Service -Name $srv -Force -ErrorAction SilentlyContinue
+                Set-Service -Name $srv -StartupType Disabled -ErrorAction SilentlyContinue
+            }
+        }
+        # Hentikan BranchCache jika aktif mengikat Port 80
+        $bc = Get-Service -Name "PeerDistSvc" -ErrorAction SilentlyContinue
+        if ($bc -and $bc.Status -eq "Running") {
+            Stop-Service -Name "PeerDistSvc" -Force -ErrorAction SilentlyContinue
+            Set-Service -Name "PeerDistSvc" -StartupType Manual -ErrorAction SilentlyContinue
+        }
+        # Tutup proses pihak ketiga atau web server lain yang mungkin memegang port 80
+        Get-Process -Name "SkypeApp", "Skype" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Write-Host "   [OK] Port 80 telah dibebaskan dari service bawaan Windows (IIS/W3SVC) dan siap untuk Apache Laragon." -ForegroundColor Green
+    } catch {}
+
     # 5.1 KONFIGURASI TEPAT SERVICE LARAGON (laragon.ini) AGAR TIDAK BENTROK PORT & SERVICE SIAP PAKAI
     $usrLaragonIni = Join-Path $targetLaragon "usr\laragon.ini"
     if (Test-Path $usrLaragonIni) {
