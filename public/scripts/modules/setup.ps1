@@ -1,14 +1,14 @@
 ﻿<#
 ==================================================================================
 SMARTLAB UNIMAL - INISIALISASI OTOMATIS STRUKTUR SOFTWARE LAB TI
-Laboratorium Terpadu Teknik Informatika — Universitas Malikussaleh
+Laboratorium Terpadu Teknik Informatika - Universitas Malikussaleh
 ==================================================================================
 Fungsi:
 1. Otomatis membuat struktur folder:
    Lab_Software\
-   ├── jalankan-instalasi.bat
-   └── Apps\
-       └── install-lab-software.ps1
+   +-- jalankan-instalasi.bat
+   +-- Apps\
+       +-- install-lab-software.ps1
 2. Mengunduh launcher batch dan skrip instalasi utama versi terbaru dari GitHub resmi.
 3. Menyiapkan sistem siap pakai untuk mode offline / online.
 ==================================================================================

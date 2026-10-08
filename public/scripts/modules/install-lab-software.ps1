@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 # SCRIPT OTOMASI INSTALASI SOFTWARE LABORATORIUM TEKNIK INFORMATIKA
 # UNIVERSITAS MALIKUSSALEH (UNIMAL)
 # ==============================================================================
@@ -14,7 +14,7 @@
 #   - Apps/ Folder      : Folder khusus penyimpanan seluruh master installer offline
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.4.6"
+$SCRIPT_CURRENT_VERSION = "3.4.7"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 22 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -159,8 +159,9 @@ function Check-ScriptSelfUpdate {
         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
         $ts = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
         $updateUrls = @(
-            "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/install-lab-software.ps1?v=$ts",
-            "https://smartlab.is-best.net/scripts/install-lab-software.ps1?v=$ts"
+            "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/modules/install-lab-software.ps1?v=$ts",
+            "https://smartlab.is-best.net/scripts/modules/install-lab-software.ps1?v=$ts",
+            "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/install.ps1?v=$ts"
         )
         $remoteContent = $null
         foreach ($url in $updateUrls) {

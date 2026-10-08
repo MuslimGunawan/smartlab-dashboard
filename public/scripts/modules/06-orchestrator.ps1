@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 # MODUL 06: WORKFLOW ORCHESTRATOR & MENU HANDLERS (SMARTLAB LAB TI UNIMAL)
 # Run-FullInstallation, Test-LabSoftwareStatus, Start-DownloadOnlyMaster,
 # Run-CustomInstallation, Wait-PacedStep, Wait-EnterOnly
@@ -159,12 +159,12 @@ function Run-FullInstallation {
     # REKAPITULASI HASIL INSTALASI
     Clear-Host
     Show-SmartLabBanner
-    Write-Host "  ┌────────────────────────────────────────────────────────────────────────────┐" -ForegroundColor Green
-    Write-Host "  │ " -NoNewline -ForegroundColor Green
+    Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor Green
+    Write-Host "  | " -NoNewline -ForegroundColor Green
     Write-Host "RANGKUMAN HASIL STANDARISASI OTOMASI SOFTWARE LAB TI" -NoNewline -ForegroundColor White
     Write-Host (" " * (51 - "RANGKUMAN HASIL STANDARISASI OTOMASI SOFTWARE LAB TI".Length)) -NoNewline
-    Write-Host "[v$SCRIPT_CURRENT_VERSION] │" -ForegroundColor Yellow
-    Write-Host "  └────────────────────────────────────────────────────────────────────────────┘" -ForegroundColor Green
+    Write-Host "[v$SCRIPT_CURRENT_VERSION] |" -ForegroundColor Yellow
+    Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor Green
 
     $totalApp = $script:InstallResults.Count
     $sudah = ($script:InstallResults | Where-Object { $_.Status -eq "SUDAH TERPASANG" } | Measure-Object).Count
@@ -173,10 +173,10 @@ function Run-FullInstallation {
     $lewat = ($script:InstallResults | Where-Object { $_.Status -eq "BELUM TERSEDIA" } | Measure-Object).Count
 
     Write-Host "`n  METRIK HASIL EKSEKUSI:" -ForegroundColor Yellow
-    Write-Host ("  [● Sukses Baru: {0}]  [✓ Sudah Ada: {1}]  [▲ Menunggu File: {2}]  [✕ Gagal: {3}]" -f $berhasil, $sudah, $lewat, $gagal) -ForegroundColor Cyan
-    Write-Host "`n  ┌─────┬──────────────────────────────┬──────────────────┬────────────────────┐" -ForegroundColor DarkGray
-    Write-Host "  │ No  │ Nama Software Lab            │ Status Akhir     │ Keterangan         │" -ForegroundColor Cyan
-    Write-Host "  ├─────┼──────────────────────────────┼──────────────────┼────────────────────┤" -ForegroundColor DarkGray
+    Write-Host ("  [+ Sukses Baru: {0}]  [= Sudah Ada: {1}]  [~ Menunggu File: {2}]  [x Gagal: {3}]" -f $berhasil, $sudah, $lewat, $gagal) -ForegroundColor Cyan
+    Write-Host "`n  +-----+------------------------------+------------------+--------------------+" -ForegroundColor DarkGray
+    Write-Host "  | No  | Nama Software Lab            | Status Akhir     | Keterangan         |" -ForegroundColor Cyan
+    Write-Host "  +-----+------------------------------+------------------+--------------------+" -ForegroundColor DarkGray
 
     $idx = 1
     foreach ($item in $script:InstallResults) {
@@ -186,23 +186,23 @@ function Run-FullInstallation {
         elseif ($item.Status -eq "SUDAH TERPASANG") { $color = "Cyan" }
 
         $shortKet = if ($item.Keterangan -and $item.Keterangan.Length -gt 18) { $item.Keterangan.Substring(0, 15) + "..." } else { $item.Keterangan }
-        Write-Host ("  │ {0,3} │ {1,-28} │ " -f $idx, $item.Name) -NoNewline -ForegroundColor DarkGray
+        Write-Host ("  | {0,3} | {1,-28} | " -f $idx, $item.Name) -NoNewline -ForegroundColor DarkGray
         Write-Host ("{0,-16}" -f $item.Status) -NoNewline -ForegroundColor $color
-        Write-Host " │ " -NoNewline -ForegroundColor DarkGray
+        Write-Host " | " -NoNewline -ForegroundColor DarkGray
         Write-Host ("{0,-18}" -f $shortKet) -NoNewline -ForegroundColor Gray
-        Write-Host "│" -ForegroundColor DarkGray
+        Write-Host "|" -ForegroundColor DarkGray
         $idx++
     }
-    Write-Host "  └─────┴──────────────────────────────┴──────────────────┴────────────────────┘`n" -ForegroundColor DarkGray
+    Write-Host "  +-----+------------------------------+------------------+--------------------+`n" -ForegroundColor DarkGray
 }
 
 function Test-LabSoftwareStatus {
-    Write-Host "`n  ┌────────────────────────────────────────────────────────────────────────────┐" -ForegroundColor Cyan
-    Write-Host "  │ " -NoNewline -ForegroundColor Cyan
+    Write-Host "`n  +----------------------------------------------------------------------------+" -ForegroundColor Cyan
+    Write-Host "  | " -NoNewline -ForegroundColor Cyan
     Write-Host "STATUS VERIFIKASI SOFTWARE & WEB STACK LAB TI" -NoNewline -ForegroundColor White
     Write-Host (" " * (58 - "STATUS VERIFIKASI SOFTWARE & WEB STACK LAB TI".Length)) -NoNewline
-    Write-Host "[v$SCRIPT_CURRENT_VERSION] │" -ForegroundColor Yellow
-    Write-Host "  └────────────────────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
+    Write-Host "[v$SCRIPT_CURRENT_VERSION] |" -ForegroundColor Yellow
+    Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor Cyan
 
     $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
     $env:COMPOSER_NO_INTERACTION = "1"
@@ -260,9 +260,9 @@ function Test-LabSoftwareStatus {
     )
 
     Write-Host "`n  [1] LINGKUNGAN RUNTIME & PERINTAH CLI (PATH SYSTEM):" -ForegroundColor Yellow
-    Write-Host "  ┌─────┬──────────────────────┬───────────────────────────────────────────────┐" -ForegroundColor DarkGray
-    Write-Host "  │ No  │ Perintah / Runtime   │ Versi / Output Aktif Terdeteksi               │" -ForegroundColor Cyan
-    Write-Host "  ├─────┼──────────────────────┼───────────────────────────────────────────────┤" -ForegroundColor DarkGray
+    Write-Host "  +-----+----------------------+-----------------------------------------------+" -ForegroundColor DarkGray
+    Write-Host "  | No  | Perintah / Runtime   | Versi / Output Aktif Terdeteksi               |" -ForegroundColor Cyan
+    Write-Host "  +-----+----------------------+-----------------------------------------------+" -ForegroundColor DarkGray
 
     $cIdx = 1
     foreach ($chk in $cliChecks) {
@@ -297,12 +297,12 @@ function Test-LabSoftwareStatus {
         }
 
         if ($outStr.Length -gt 45) { $outStr = $outStr.Substring(0, 42) + "..." }
-        Write-Host ("  │ {0,3} │ {1,-20} │ " -f $cIdx, $chk.Name) -NoNewline -ForegroundColor DarkGray
+        Write-Host ("  | {0,3} | {1,-20} | " -f $cIdx, $chk.Name) -NoNewline -ForegroundColor DarkGray
         Write-Host ("{0,-45}" -f $outStr) -NoNewline -ForegroundColor $color
-        Write-Host " │" -ForegroundColor DarkGray
+        Write-Host " |" -ForegroundColor DarkGray
         $cIdx++
     }
-    Write-Host "  └─────┴──────────────────────┴───────────────────────────────────────────────┘" -ForegroundColor DarkGray
+    Write-Host "  +-----+----------------------+-----------------------------------------------+" -ForegroundColor DarkGray
 
     $guiApps = @(
         @{ Name = "7-Zip";               Path = @("C:\Program Files\7-Zip\7z.exe", "C:\Program Files (x86)\7-Zip\7z.exe"); Reg = "*7-Zip*" },
@@ -334,9 +334,9 @@ function Test-LabSoftwareStatus {
     } catch {}
 
     Write-Host "`n  [2] APLIKASI DESKTOP & IDE PRAKTIKUM:" -ForegroundColor Yellow
-    Write-Host "  ┌─────┬──────────────────────┬────────────────┬──────────────────────────────┐" -ForegroundColor DarkGray
-    Write-Host "  │ No  │ Nama Aplikasi Lab    │ Status Sistem  │ Lokasi / Keterangan          │" -ForegroundColor Cyan
-    Write-Host "  ├─────┼──────────────────────┼────────────────┼──────────────────────────────┤" -ForegroundColor DarkGray
+    Write-Host "  +-----+----------------------+----------------+------------------------------+" -ForegroundColor DarkGray
+    Write-Host "  | No  | Nama Aplikasi Lab    | Status Sistem  | Lokasi / Keterangan          |" -ForegroundColor Cyan
+    Write-Host "  +-----+----------------------+----------------+------------------------------+" -ForegroundColor DarkGray
 
     $gIdx = 1
     foreach ($gui in $guiApps) {
@@ -392,40 +392,40 @@ function Test-LabSoftwareStatus {
         $desc = if ($found) { $found } else { "Belum terdeteksi di path sistem" }
         if ($desc.Length -gt 28) { $desc = $desc.Substring(0, 25) + "..." }
 
-        Write-Host ("  │ {0,3} │ {1,-20} │ " -f $gIdx, $gui.Name) -NoNewline -ForegroundColor DarkGray
+        Write-Host ("  | {0,3} | {1,-20} | " -f $gIdx, $gui.Name) -NoNewline -ForegroundColor DarkGray
         Write-Host ("{0,-14}" -f $statusBadge) -NoNewline -ForegroundColor $bColor
-        Write-Host " │ " -NoNewline -ForegroundColor DarkGray
+        Write-Host " | " -NoNewline -ForegroundColor DarkGray
         Write-Host ("{0,-28}" -f $desc) -NoNewline -ForegroundColor Gray
-        Write-Host "│" -ForegroundColor DarkGray
+        Write-Host "|" -ForegroundColor DarkGray
         $gIdx++
     }
-    Write-Host "  └─────┴──────────────────────┴────────────────┴──────────────────────────────┘" -ForegroundColor DarkGray
+    Write-Host "  +-----+----------------------+----------------+------------------------------+" -ForegroundColor DarkGray
 
     Write-Host "`n  [3] PETA ALOKASI PORT RESMI LAB TI (STANDAR ANTI-BENTROK):" -ForegroundColor Yellow
-    Write-Host "  ┌──────────┬──────────────────────┬──────────────────────────────────────────┐" -ForegroundColor DarkGray
-    Write-Host "  │ Port     │ Layanan / Web Server │ Penggunaan Praktikum Lab TI              │" -ForegroundColor Cyan
-    Write-Host "  ├──────────┼──────────────────────┼──────────────────────────────────────────┤" -ForegroundColor DarkGray
-    Write-Host "  │ 80       │ Laragon Apache HTTP  │ Web Server Praktikum Utama               │" -ForegroundColor Green
-    Write-Host "  │ 443      │ Laragon Apache SSL   │ HTTPS Secure Local Web                   │" -ForegroundColor Green
-    Write-Host "  │ 3306     │ Laragon MySQL/MariaDB│ Database Standar Lab & Laravel .env      │" -ForegroundColor Green
-    Write-Host "  │ 8088     │ XAMPP Apache HTTP    │ Web Server Sekunder (Bebas Konflik)      │" -ForegroundColor Yellow
-    Write-Host "  │ 8444     │ XAMPP Apache SSL     │ HTTPS Sekunder XAMPP                     │" -ForegroundColor Yellow
-    Write-Host "  │ 3307     │ XAMPP MySQL Database │ Port Khusus XAMPP (Anti-Bentrok)         │" -ForegroundColor Yellow
-    Write-Host "  │ 8000     │ Laravel Server       │ php artisan serve                        │" -ForegroundColor Cyan
-    Write-Host "  │ 3000     │ Node / Next / React  │ npm run dev / Frontend Dev Server        │" -ForegroundColor Cyan
-    Write-Host "  │ 5173     │ Vite Dev Server      │ Vue / Svelte / React Vite                │" -ForegroundColor Cyan
-    Write-Host "  └──────────┴──────────────────────┴──────────────────────────────────────────┘`n" -ForegroundColor DarkGray
+    Write-Host "  +----------+----------------------+------------------------------------------+" -ForegroundColor DarkGray
+    Write-Host "  | Port     | Layanan / Web Server | Penggunaan Praktikum Lab TI              |" -ForegroundColor Cyan
+    Write-Host "  +----------+----------------------+------------------------------------------+" -ForegroundColor DarkGray
+    Write-Host "  | 80       | Laragon Apache HTTP  | Web Server Praktikum Utama               |" -ForegroundColor Green
+    Write-Host "  | 443      | Laragon Apache SSL   | HTTPS Secure Local Web                   |" -ForegroundColor Green
+    Write-Host "  | 3306     | Laragon MySQL/MariaDB| Database Standar Lab & Laravel .env      |" -ForegroundColor Green
+    Write-Host "  | 8088     | XAMPP Apache HTTP    | Web Server Sekunder (Bebas Konflik)      |" -ForegroundColor Yellow
+    Write-Host "  | 8444     | XAMPP Apache SSL     | HTTPS Sekunder XAMPP                     |" -ForegroundColor Yellow
+    Write-Host "  | 3307     | XAMPP MySQL Database | Port Khusus XAMPP (Anti-Bentrok)         |" -ForegroundColor Yellow
+    Write-Host "  | 8000     | Laravel Server       | php artisan serve                        |" -ForegroundColor Cyan
+    Write-Host "  | 3000     | Node / Next / React  | npm run dev / Frontend Dev Server        |" -ForegroundColor Cyan
+    Write-Host "  | 5173     | Vite Dev Server      | Vue / Svelte / React Vite                |" -ForegroundColor Cyan
+    Write-Host "  +----------+----------------------+------------------------------------------+`n" -ForegroundColor DarkGray
 }
 
 function Start-DownloadOnlyMaster {
     Clear-Host
     Show-SmartLabBanner
-    Write-Host "  ┌────────────────────────────────────────────────────────────────────────────┐" -ForegroundColor Cyan
-    Write-Host "  │ " -NoNewline -ForegroundColor Cyan
+    Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor Cyan
+    Write-Host "  | " -NoNewline -ForegroundColor Cyan
     Write-Host "MODE UNDUH SAJA: CACHE MASTER OFFLINE KE FOLDER APPS/" -NoNewline -ForegroundColor White
     Write-Host (" " * (60 - "MODE UNDUH SAJA: CACHE MASTER OFFLINE KE FOLDER APPS/".Length)) -NoNewline
-    Write-Host "[v$SCRIPT_CURRENT_VERSION] │" -ForegroundColor Yellow
-    Write-Host "  └────────────────────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
+    Write-Host "[v$SCRIPT_CURRENT_VERSION] |" -ForegroundColor Yellow
+    Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor Cyan
     Write-Host "  Fungsi ini akan mengunduh seluruh file master software lab ke dalam folder:" -ForegroundColor Gray
     Write-Host "  -> $AppsDir" -ForegroundColor Yellow
     Write-Host "  (Tidak ada aplikasi yang dipasang ke Windows pada mode ini. Aman untuk persiapan lab).`n" -ForegroundColor DarkGray
@@ -756,12 +756,12 @@ function Start-DownloadOnlyMaster {
 
     Clear-Host
     Show-SmartLabBanner
-    Write-Host "  ┌────────────────────────────────────────────────────────────────────────────┐" -ForegroundColor Green
-    Write-Host "  │ " -NoNewline -ForegroundColor Green
+    Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor Green
+    Write-Host "  | " -NoNewline -ForegroundColor Green
     Write-Host "SELESAI - REKAPITULASI CACHE MASTER OFFLINE KE FLASHDISK (APPS/)" -NoNewline -ForegroundColor White
     Write-Host (" " * (60 - "SELESAI - REKAPITULASI CACHE MASTER OFFLINE KE FLASHDISK (APPS/)".Length)) -NoNewline
-    Write-Host "[v$SCRIPT_CURRENT_VERSION] │" -ForegroundColor Yellow
-    Write-Host "  └────────────────────────────────────────────────────────────────────────────┘" -ForegroundColor Green
+    Write-Host "[v$SCRIPT_CURRENT_VERSION] |" -ForegroundColor Yellow
+    Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor Green
 
     $totalSize = 0
     try {
@@ -774,35 +774,35 @@ function Start-DownloadOnlyMaster {
 
     Write-Host "  Lokasi Target Penyimpanan : $AppsDir" -ForegroundColor White
     Write-Host "  Total Penggunaan Disk     : $totalGb GB" -ForegroundColor Cyan
-    Write-Host "`n  ┌─────┬────────────────────────────────┬────────────────┬────────────────────┐" -ForegroundColor DarkGray
-    Write-Host "  │ No  │ Software Lab                   │ Status Berkas  │ Ukuran Master      │" -ForegroundColor Cyan
-    Write-Host "  ├─────┼────────────────────────────────┼────────────────┼────────────────────┤" -ForegroundColor DarkGray
+    Write-Host "`n  +-----+--------------------------------+----------------+--------------------+" -ForegroundColor DarkGray
+    Write-Host "  | No  | Software Lab                   | Status Berkas  | Ukuran Master      |" -ForegroundColor Cyan
+    Write-Host "  +-----+--------------------------------+----------------+--------------------+" -ForegroundColor DarkGray
 
     $rIdx = 1
     foreach ($r in $downloadResults) {
         $c = "Green"
         if ($r.Status -eq "GAGAL UNDUH") { $c = "Red" }
         elseif ($r.Status -eq "SUDAH ADA") { $c = "Cyan" }
-        Write-Host ("  │ {0,3} │ {1,-30} │ " -f $rIdx, $r.Software) -NoNewline -ForegroundColor DarkGray
+        Write-Host ("  | {0,3} | {1,-30} | " -f $rIdx, $r.Software) -NoNewline -ForegroundColor DarkGray
         Write-Host ("{0,-14}" -f $r.Status) -NoNewline -ForegroundColor $c
-        Write-Host " │ " -NoNewline -ForegroundColor DarkGray
+        Write-Host " | " -NoNewline -ForegroundColor DarkGray
         Write-Host ("{0,-18}" -f $r.Ukuran) -NoNewline -ForegroundColor Gray
-        Write-Host "│" -ForegroundColor DarkGray
+        Write-Host "|" -ForegroundColor DarkGray
         $rIdx++
     }
-    Write-Host "  └─────┴────────────────────────────────┴────────────────┴────────────────────┘`n" -ForegroundColor DarkGray
+    Write-Host "  +-----+--------------------------------+----------------+--------------------+`n" -ForegroundColor DarkGray
     Write-Host "  Flashdisk Anda kini telah dilengkapi master offline untuk seluruh lab!`n" -ForegroundColor Green
 }
 
 function Run-CustomInstallation {
     Clear-Host
     Show-SmartLabBanner
-    Write-Host "  ┌────────────────────────────────────────────────────────────────────────────┐" -ForegroundColor Cyan
-    Write-Host "  │ " -NoNewline -ForegroundColor Cyan
+    Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor Cyan
+    Write-Host "  | " -NoNewline -ForegroundColor Cyan
     Write-Host "MENU INSTALASI KUSTOM & PAKET SOFTWARE LAB" -NoNewline -ForegroundColor White
     Write-Host (" " * (60 - "MENU INSTALASI KUSTOM & PAKET SOFTWARE LAB".Length)) -NoNewline
-    Write-Host "[v$SCRIPT_CURRENT_VERSION] │" -ForegroundColor Yellow
-    Write-Host "  └────────────────────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
+    Write-Host "[v$SCRIPT_CURRENT_VERSION] |" -ForegroundColor Yellow
+    Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor Cyan
     Write-Host "  Pilih software yang ingin diinstal. Paket keterkaitan otomatis disertakan:`n" -ForegroundColor DarkGray
 
     $catalog = @(
@@ -831,7 +831,7 @@ function Run-CustomInstallation {
     foreach ($item in $catalog) {
         $depText = if ($item.Deps.Count -gt 0) { " [Paket: +$($item.Deps -join ', ')]" } else { "" }
         Write-Host ("  [{0,2}] {1,-26} {2}" -f $item.Id, $item.Name, $depText) -ForegroundColor Cyan
-        Write-Host ("       └─ {0}" -f $item.Description) -ForegroundColor DarkGray
+        Write-Host ("       +- {0}" -f $item.Description) -ForegroundColor DarkGray
     }
 
     Write-Host "`n  Contoh input: ketik '1' untuk QGIS (otomatis + Google Earth)" -ForegroundColor Yellow

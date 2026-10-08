@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 # MODUL 01: CORE HELPERS & UTILITIES (SMARTLAB LAB TI UNIMAL)
 # ==============================================================================
 
@@ -22,28 +22,28 @@ function Test-WingetAvailable {
 }
 
 function Show-SmartLabBanner {
-    Write-Host "  ┌────────────────────────────────────────────────────────────────────────────┐" -ForegroundColor Cyan
-    Write-Host "  │ " -NoNewline -ForegroundColor Cyan
+    Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor Cyan
+    Write-Host "  | " -NoNewline -ForegroundColor Cyan
     Write-Host "SMARTLAB TI" -NoNewline -ForegroundColor White
-    Write-Host " │ " -NoNewline -ForegroundColor DarkGray
+    Write-Host " | " -NoNewline -ForegroundColor DarkGray
     Write-Host "STANDARISASI LABORATORIUM KOMPUTER" -NoNewline -ForegroundColor Gray
     Write-Host (" " * (42 - "STANDARISASI LABORATORIUM KOMPUTER".Length)) -NoNewline
     Write-Host "[v$SCRIPT_CURRENT_VERSION]" -NoNewline -ForegroundColor Yellow
-    Write-Host " │" -ForegroundColor Cyan
-    Write-Host "  │ " -NoNewline -ForegroundColor Cyan
-    Write-Host "Teknik Informatika • Universitas Malikussaleh (UNIMAL)                     " -NoNewline -ForegroundColor DarkCyan
-    Write-Host "│" -ForegroundColor Cyan
-    Write-Host "  ├────────────────────────────────────────────────────────────────────────────┤" -ForegroundColor Cyan
+    Write-Host " |" -ForegroundColor Cyan
+    Write-Host "  | " -NoNewline -ForegroundColor Cyan
+    Write-Host "Teknik Informatika * Universitas Malikussaleh (UNIMAL)                     " -NoNewline -ForegroundColor DarkCyan
+    Write-Host "|" -ForegroundColor Cyan
+    Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor Cyan
     if ($script:IsAdmin) {
-        Write-Host "  │ Hak Akses Sesi : " -NoNewline -ForegroundColor Gray
-        Write-Host "● ADMINISTRATOR (Full Elevated Access)                    " -NoNewline -ForegroundColor Green
-        Write-Host "│" -ForegroundColor Cyan
+        Write-Host "  | Hak Akses Sesi : " -NoNewline -ForegroundColor Gray
+        Write-Host "* ADMINISTRATOR (Full Elevated Access)                    " -NoNewline -ForegroundColor Green
+        Write-Host "|" -ForegroundColor Cyan
     } else {
-        Write-Host "  │ Hak Akses Sesi : " -NoNewline -ForegroundColor Gray
-        Write-Host "▲ PENGGUNA STANDAR (Non-Admin / User Scope Only)           " -NoNewline -ForegroundColor Yellow
-        Write-Host "│" -ForegroundColor Cyan
+        Write-Host "  | Hak Akses Sesi : " -NoNewline -ForegroundColor Gray
+        Write-Host "^ PENGGUNA STANDAR (Non-Admin / User Scope Only)           " -NoNewline -ForegroundColor Yellow
+        Write-Host "|" -ForegroundColor Cyan
     }
-    Write-Host "  └────────────────────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
+    Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor Cyan
     Write-Host ""
 }
 
@@ -558,14 +558,14 @@ function Install-AppSmart {
         [switch]$IsInteractive
     )
 
-    $boxTitle = "  ► MEMPROSES: $Name "
+    $boxTitle = "  [>] MEMPROSES: $Name "
     $padding = [math]::Max(0, 76 - $boxTitle.Length)
-    Write-Host "`n  ┌$('-' * 76)┐" -ForegroundColor DarkCyan
-    Write-Host "  │" -NoNewline -ForegroundColor DarkCyan
+    Write-Host "`n  +$('-' * 76)+" -ForegroundColor DarkCyan
+    Write-Host "  |" -NoNewline -ForegroundColor DarkCyan
     Write-Host "$boxTitle" -NoNewline -ForegroundColor Cyan
     Write-Host (" " * $padding) -NoNewline
-    Write-Host "│" -ForegroundColor DarkCyan
-    Write-Host "  └$('-' * 76)┘" -ForegroundColor DarkCyan
+    Write-Host "|" -ForegroundColor DarkCyan
+    Write-Host "  +$('-' * 76)+" -ForegroundColor DarkCyan
 
     if ($CheckPath) {
         $checkList = @($CheckPath)
