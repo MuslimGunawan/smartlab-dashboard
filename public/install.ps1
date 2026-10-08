@@ -88,16 +88,16 @@ if (-not $AppsDir) {
 }
 
 # 3. Deteksi & Sinkronisasi Modul-Modul Modular (Folder modules/)
-$modulesDir = Join-Path $PSScriptRoot "modules"
-if (-not (Test-Path $modulesDir)) {
-    $modulesDir = Join-Path (Split-Path -Parent $PSScriptRoot) "modules"
+$modulesDir = $PSScriptRoot
+if ((Split-Path -Leaf $modulesDir) -ine "modules") {
+    if (Test-Path (Join-Path $PSScriptRoot "modules")) {
+        $modulesDir = Join-Path $PSScriptRoot "modules"
+    } elseif (Test-Path (Join-Path (Split-Path -Parent $PSScriptRoot) "modules")) {
+        $modulesDir = Join-Path (Split-Path -Parent $PSScriptRoot) "modules"
+    }
 }
 if (-not (Test-Path $modulesDir)) {
-    $modulesDir = Join-Path (Get-Location).Path "modules"
-}
-if (-not (Test-Path $modulesDir)) {
-    New-Item -ItemType Directory -Path (Join-Path $PSScriptRoot "modules") -Force | Out-Null
-    $modulesDir = Join-Path $PSScriptRoot "modules"
+    New-Item -ItemType Directory -Path $modulesDir -Force | Out-Null
 }
 
 # 3.1 Pemuatan & Auto-Download Modul dari Cloud SmartLab / GitHub jika belum ada di lokal
