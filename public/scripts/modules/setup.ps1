@@ -67,7 +67,7 @@ $wc.Headers.Add("Pragma", "no-cache")
 
 $ts = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 $destBat = Join-Path $targetBase "jalankan-instalasi.bat"
-$batUrl = "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/jalankan-instalasi.bat?v=$ts"
+$batUrl = "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/jalankan-instalasi.bat"
 
 Write-Host "`n[i] Mengunduh berkas launcher 'jalankan-instalasi.bat'..." -ForegroundColor Yellow
 try {
@@ -76,6 +76,7 @@ try {
 } catch {
     Write-Host " [!] Gagal mengunduh launcher bat: $($_.Exception.Message)" -ForegroundColor Red
 }
+$wc.Dispose()
 
 $moduleList = @(
     "install-lab-software.ps1",
@@ -90,15 +91,17 @@ $moduleList = @(
 Write-Host "`n[i] Mengunduh seluruh modul instalasi SmartLab TI ke $modulesDir..." -ForegroundColor Yellow
 foreach ($mod in $moduleList) {
     $destMod = Join-Path $modulesDir $mod
-    $modUrl = "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/modules/$mod?v=$ts"
+    $modUrl = "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/modules/$mod"
     try {
-        $wc.DownloadFile($modUrl, $destMod)
+        $modWc = New-Object System.Net.WebClient
+        $modWc.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+        $modWc.DownloadFile($modUrl, $destMod)
+        $modWc.Dispose()
         Write-Host " [OK] Modul siap: $mod" -ForegroundColor Green
     } catch {
         Write-Host " [!] Gagal mengunduh modul $mod : $($_.Exception.Message)" -ForegroundColor Yellow
     }
 }
-$wc.Dispose()
 
 # 3. Tampilkan Informasi Struktur Berkas
 Write-Host "`n==============================================================" -ForegroundColor Green
