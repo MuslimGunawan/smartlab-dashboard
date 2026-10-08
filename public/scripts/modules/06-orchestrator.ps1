@@ -79,8 +79,12 @@ function Run-FullInstallation {
                      -CheckPath @("C:\Program Files\Android\Android Studio\bin\studio64.exe", "C:\Program Files\Android Studio\bin\studio64.exe", "C:\Program Files (x86)\Android\Android Studio\bin\studio64.exe")
     Wait-PacedStep
 
-    # 12. QGIS Desktop (Otomatis Silent)
+    # 12. QGIS Desktop (Otomatis Silent dengan Multi-Mirror Google Drive & CDN)
     $qgisMirrors = @(
+        "https://drive.google.com/file/d/1j2ni6VxI8w4We73Ktwo6q-ZGf3AVaKSf/view?usp=sharing",
+        "https://drive.google.com/file/d/1M94aEgIA2-vm_6sDLvNt8NjxnDKi_64F/view?usp=sharing",
+        "https://drive.google.com/file/d/1bZLML-jzJSAVz1FX2JZOJierPENvOvdn/view?usp=sharing",
+        "https://drive.google.com/file/d/1jIpBpvowlyvVifhfVnY1HhIlKYpMtacR/view?usp=sharing",
         "https://download.osgeo.org/qgis/windows/QGIS-OSGeo4W-3.34.14-1.msi",
         "https://qgis.org/downloads/QGIS-OSGeo4W-3.34.14-1.msi"
     )
@@ -550,6 +554,10 @@ function Start-DownloadOnlyMaster {
             FilePattern = @("*QGIS*.msi")
             DestFile = "QGIS-OSGeo4W-3.34.14-1.msi"
             Urls = @(
+                "https://drive.google.com/file/d/1j2ni6VxI8w4We73Ktwo6q-ZGf3AVaKSf/view?usp=sharing",
+                "https://drive.google.com/file/d/1M94aEgIA2-vm_6sDLvNt8NjxnDKi_64F/view?usp=sharing",
+                "https://drive.google.com/file/d/1bZLML-jzJSAVz1FX2JZOJierPENvOvdn/view?usp=sharing",
+                "https://drive.google.com/file/d/1jIpBpvowlyvVifhfVnY1HhIlKYpMtacR/view?usp=sharing",
                 "https://download.osgeo.org/qgis/windows/QGIS-OSGeo4W-3.34.14-1.msi",
                 "https://qgis.org/downloads/QGIS-OSGeo4W-3.34.14-1.msi"
             )
@@ -932,6 +940,10 @@ function Run-CustomInstallation {
             "GoogleEarth"   { Setup-GoogleEarth }
             "QGIS"          {
                 $qgisMirrors = @(
+                    "https://drive.google.com/file/d/1j2ni6VxI8w4We73Ktwo6q-ZGf3AVaKSf/view?usp=sharing",
+                    "https://drive.google.com/file/d/1M94aEgIA2-vm_6sDLvNt8NjxnDKi_64F/view?usp=sharing",
+                    "https://drive.google.com/file/d/1bZLML-jzJSAVz1FX2JZOJierPENvOvdn/view?usp=sharing",
+                    "https://drive.google.com/file/d/1jIpBpvowlyvVifhfVnY1HhIlKYpMtacR/view?usp=sharing",
                     "https://download.osgeo.org/qgis/windows/QGIS-OSGeo4W-3.34.14-1.msi",
                     "https://qgis.org/downloads/QGIS-OSGeo4W-3.34.14-1.msi"
                 )
