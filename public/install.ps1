@@ -2560,6 +2560,8 @@ function Setup-VirtualBox {
             }
         }
     }
+}
+
 # 10.2 Fungsi Setup Google Earth Pro (Pemetaan Spasial 3D / GIS)
 function Setup-GoogleEarth {
     Write-Host "`n========================================================" -ForegroundColor Cyan
@@ -4057,6 +4059,8 @@ function Start-DownloadOnlyMaster {
     }
     Write-Host "==============================================================================" -ForegroundColor Green
     Write-Host "Flashdisk Anda kini telah dilengkapi master offline untuk seluruh lab!`n" -ForegroundColor Green
+}
+
 # ==============================================================================
 # MENU 2: INSTALASI KUSTOM / PILIHAN DENGAN PAKET KETERKAITAN OTOMATIS (SMART BUNDLE)
 # ==============================================================================
