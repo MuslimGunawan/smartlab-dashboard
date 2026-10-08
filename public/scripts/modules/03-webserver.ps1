@@ -4,6 +4,89 @@
 # XAMPP Server (Port Anti-Bentrok: 8088/8444/3307), Composer & Laravel Setup
 # ==============================================================================
 
+# ==============================================================================
+# FUNGSI SENTRALISASI & DEDUPLIKASI KONFIGURASI PHP.INI (ANTI-ERROR STARTUP)
+# ==============================================================================
+function Configure-LabPhpIni {
+    param (
+        [string]$IniPath,
+        [string]$PhpFolder
+    )
+    if (-not (Test-Path $IniPath)) {
+        $devIni = Join-Path $PhpFolder "php.ini-development"
+        $prodIni = Join-Path $PhpFolder "php.ini-production"
+        if (Test-Path $devIni) {
+            Copy-Item $devIni -Destination $IniPath -Force -ErrorAction SilentlyContinue
+        } elseif (Test-Path $prodIni) {
+            Copy-Item $prodIni -Destination $IniPath -Force -ErrorAction SilentlyContinue
+        } else {
+            return
+        }
+    }
+
+    try {
+        $content = [System.IO.File]::ReadAllText($IniPath)
+        $extDir = Join-Path $PhpFolder "ext"
+        $escapedExt = $extDir.Replace('\', '/')
+
+        # 1. Bersihkan semua entri extension lama yang berulang atau korup
+        $lines = @($content -split "`r?`n")
+        $filteredLines = [System.Collections.Generic.List[string]]::new()
+        foreach ($line in $lines) {
+            # Abaikan entri extension= atau ;extension= lama agar tidak ada duplikasi sama sekali
+            if ($line -match '^\s*;?\s*extension\s*=\s*(?:php_)?([a-zA-Z0-9_-]+)(?:\.dll)?\s*$') {
+                continue
+            }
+            # Abaikan baris direktif lama yang akan ditimpa bersih
+            if ($line -match '^\s*;?\s*extension_dir\s*=') { continue }
+            if ($line -match '^\s*;?\s*date\.timezone\s*=') { continue }
+            if ($line -match '^\s*;?\s*display_startup_errors\s*=') { continue }
+            if ($line -match '^\s*;?\s*display_errors\s*=') { continue }
+            if ($line -match '^\s*;?\s*error_reporting\s*=') { continue }
+            if ($line -match '^\s*;?\s*memory_limit\s*=') { continue }
+            if ($line -match '^\s*;?\s*upload_max_filesize\s*=') { continue }
+            if ($line -match '^\s*;?\s*post_max_size\s*=') { continue }
+            if ($line -match '^\s*;?\s*max_execution_time\s*=') { continue }
+            $filteredLines.Add($line)
+        }
+
+        # 2. Tambahkan konfigurasi inti anti-warning di bagian paling bawah
+        $coreConfig = @"
+
+;; ==============================================================================
+;; KONFIGURASI RESMI TERPADU LAB TI UNIMAL (ANTI-ERROR STARTUP & TIMEZONE FIX)
+;; ==============================================================================
+extension_dir = "$escapedExt"
+date.timezone = "Asia/Jakarta"
+error_reporting = 22527
+display_startup_errors = Off
+display_errors = Off
+log_errors = On
+memory_limit = 512M
+upload_max_filesize = 128M
+post_max_size = 128M
+max_execution_time = 360
+;; --- MODUL EXTENSION RESMI TERVERIFIKASI & DIUJI ---
+"@
+        $filteredLines.Add($coreConfig)
+
+        # 3. Aktifkan modul extension yang benar-benar ada di folder ext secara unik (DEDUPLIKASI TOTAL)
+        $wantedExts = @("curl", "fileinfo", "openssl", "pdo_mysql", "mysqli", "mbstring", "gd", "intl", "exif", "bcmath", "sodium", "zip")
+        foreach ($ext in $wantedExts) {
+            $hasDll = (Test-Path (Join-Path $extDir "php_$ext.dll")) -or (Test-Path (Join-Path $extDir "$ext.dll"))
+            if ($hasDll) {
+                $filteredLines.Add("extension=$ext")
+            }
+        }
+
+        $finalText = $filteredLines -join "`r`n"
+        [System.IO.File]::WriteAllText($IniPath, $finalText)
+        Write-Host "   [OK] Konfigurasi php.ini dibersihkan & dioptimalkan: $(Split-Path -Leaf (Split-Path -Parent $IniPath))\php.ini" -ForegroundColor Green
+    } catch {
+        Write-Host "   [!] Gagal mengoptimalkan php.ini: $($_.Exception.Message)" -ForegroundColor DarkYellow
+    }
+}
+
 # 1. Laragon (WAMP Stack) + Custom Lab Environment
 function Setup-LaragonStack {
     Write-Host "`n========================================================" -ForegroundColor Cyan
@@ -253,70 +336,10 @@ function Setup-LaragonStack {
         }
     }
 
-    $phpInis = Get-ChildItem -Path "$targetLaragon\bin\php" -Filter "php.ini" -Recurse -File -ErrorAction SilentlyContinue
-    foreach ($pIni in $phpInis) {
-        try {
-            $iniText = [System.IO.File]::ReadAllText($pIni.FullName)
-            $phpFolder = $pIni.Directory.FullName
-            $extDir = Join-Path $phpFolder "ext"
-
-            $hasZipDll = (Test-Path (Join-Path $extDir "php_zip.dll")) -or (Test-Path (Join-Path $extDir "zip.dll"))
-            if ($hasZipDll) {
-                $iniText = $iniText -replace '(?m)^;\s*extension\s*=\s*zip\b', 'extension=zip'
-                $iniText = $iniText -replace '(?m)^;\s*extension\s*=\s*php_zip\.dll\b', 'extension=php_zip.dll'
-                if ($iniText -notmatch '(?m)^extension\s*=\s*(zip|php_zip\.dll)\b') { $iniText += "`r`nextension=zip`r`n" }
-            } else {
-                $iniText = $iniText -replace '(?m)^\s*extension\s*=\s*php_zip\.dll\b', ';extension=php_zip.dll'
-                $iniText = $iniText -replace '(?m)^\s*extension\s*=\s*zip\b', ';extension=zip'
-            }
-
-            $extList = @("curl", "fileinfo", "openssl", "pdo_mysql", "mysqli", "mbstring", "gd", "intl", "exif", "bcmath", "sodium")
-            foreach ($ext in $extList) {
-                $hasExtDll = (Test-Path (Join-Path $extDir "php_$ext.dll")) -or (Test-Path (Join-Path $extDir "$ext.dll"))
-                if ($hasExtDll -or -not (Test-Path $extDir)) {
-                    $iniText = $iniText -replace "(?m)^\s*extension\s*=\s*(?:php_)?$ext(?:\.dll)?\b", ";extension=$ext"
-                    $matchedFirst = $false
-                    $iniLines = @($iniText -split "`r?`n")
-                    for ($li = 0; $li -lt $iniLines.Count; $li++) {
-                        if ($iniLines[$li] -match "^\s*;\s*extension\s*=\s*$ext\b") {
-                            $iniLines[$li] = "extension=$ext"
-                            $matchedFirst = $true
-                            break
-                        }
-                    }
-                    if ($matchedFirst) {
-                        $iniText = $iniLines -join "`r`n"
-                    } else {
-                        $iniText += "`r`nextension=$ext`r`n"
-                    }
-                }
-            }
-
-            if (Test-Path $extDir) {
-                $escapedExt = $extDir.Replace('\', '/')
-                $iniText = $iniText -replace '(?m)^\s*;?\s*extension_dir\s*=\s*"ext"', "extension_dir = `"$escapedExt`""
-                $iniText = $iniText -replace '(?m)^\s*;?\s*extension_dir\s*=\s*''ext''', "extension_dir = `"$escapedExt`""
-            }
-
-            $iniText = $iniText -replace '(?m)^\s*memory_limit\s*=.*$', 'memory_limit = 512M'
-            $iniText = $iniText -replace '(?m)^\s*upload_max_filesize\s*=.*$', 'upload_max_filesize = 128M'
-            $iniText = $iniText -replace '(?m)^\s*post_max_size\s*=.*$', 'post_max_size = 128M'
-            $iniText = $iniText -replace '(?m)^\s*max_execution_time\s*=.*$', 'max_execution_time = 360'
-
-            # Gunakan nilai numerik 22527 (E_ALL & ~E_DEPRECATED & ~E_STRICT) agar Apache mod_fcgid & PHP CLI tidak crash/warning
-            if ($iniText -match '(?m)^\s*error_reporting\s*=') {
-                $iniText = $iniText -replace '(?m)^\s*error_reporting\s*=.*$', 'error_reporting = 22527'
-            } else {
-                $iniText += "`r`nerror_reporting = 22527`r`n"
-            }
-            if ($iniText -match '(?m)^\s*display_startup_errors\s*=') {
-                $iniText = $iniText -replace '(?m)^\s*display_startup_errors\s*=.*$', 'display_startup_errors = Off'
-            } else {
-                $iniText += "`r`ndisplay_startup_errors = Off`r`n"
-            }
-
-            [System.IO.File]::WriteAllText($pIni.FullName, $iniText)
-        } catch {}
+    $allLaragonPhpFolders = Get-ChildItem -Path "$targetLaragon\bin\php" -Directory -ErrorAction SilentlyContinue
+    foreach ($pFolder in $allLaragonPhpFolders) {
+        $targetIni = Join-Path $pFolder.FullName "php.ini"
+        Configure-LabPhpIni -IniPath $targetIni -PhpFolder $pFolder.FullName
     }
 
     $usrLaragonIni = Join-Path $targetLaragon "usr\laragon.ini"
@@ -865,118 +888,61 @@ function Setup-ComposerAndLaravel {
         Write-Host "   [!] PHP belum ditemukan di C:\laragon\bin\php atau C:\xampp\php." -ForegroundColor Yellow
     }
 
-    $composerInstalled = $false
-    $composerExe = Get-Command composer -ErrorAction SilentlyContinue
-    if ($composerExe) {
-        $composerInstalled = $true
-    } elseif (Test-Path "C:\ProgramData\ComposerSetup\bin\composer.bat") {
-        $composerInstalled = $true
-    }
+    $programDataComposer = "C:\ProgramData\ComposerSetup\bin"
+    $laragonComposer = "C:\laragon\bin\composer"
+    if (-not (Test-Path $programDataComposer)) { New-Item -ItemType Directory -Path $programDataComposer -Force | Out-Null }
 
-    if ($composerInstalled) {
-        Write-Host "   [OK SUDAH TERPASANG] Composer terdeteksi di sistem." -ForegroundColor Green
-        try {
-            & composer self-update --quiet --no-interaction 2>$null
-        } catch {}
-        Write-Host "   -> Melewati instalasi Composer (Skip)." -ForegroundColor DarkGray
-    } else {
-        $composerInstaller = Get-ChildItem -Path $AppsDir -Filter "*Composer*.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-        if (-not $composerInstaller) {
-            Write-Host "   [i] File Composer offline belum ada di Apps. Mengunduh Composer-Setup.exe otomatis..." -ForegroundColor Yellow
-            try {
-                $compUrl = "https://getcomposer.org/Composer-Setup.exe"
-                $destPath = Join-Path $AppsDir "Composer-Setup.exe"
-                [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-                $wc = New-Object System.Net.WebClient
-                $wc.DownloadFile($compUrl, $destPath)
-                $wc.Dispose()
-                $composerInstaller = Get-Item $destPath -ErrorAction SilentlyContinue
-                Write-Host "   [OK] Composer-Setup.exe berhasil diunduh dan disimpan ke folder Apps!" -ForegroundColor Green
-            } catch {
-                Write-Host "   [!] Gagal mengunduh Composer secara otomatis dari internet: $($_.Exception.Message)" -ForegroundColor Red
-            }
-        }
-
-        if ($composerInstaller) {
-            Write-Host "   [OK] Ditemukan installer: $($composerInstaller.Name)" -ForegroundColor Green
-            Write-Host "   [i] Menjalankan instalasi Composer secara silent..." -ForegroundColor Yellow
-            $cArgs = "/VERYSILENT /NORESTART /SP- /SUPPRESSMSGBOXES"
-            if ($phpPath) {
-                $cArgs += " /PHP=`"$phpPath`""
-            }
-            $proc = Start-Process -FilePath $composerInstaller.FullName -ArgumentList $cArgs -Wait -PassThru
-            if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
-                Write-Host "   [OK] Berhasil memasang Composer!" -ForegroundColor Green
-            }
+    $activePhar = $null
+    $pharCandidates = @(
+        (Join-Path $laragonComposer "composer.phar"),
+        (Join-Path $programDataComposer "composer.phar"),
+        (Join-Path $AppsDir "composer.phar")
+    )
+    foreach ($pc in $pharCandidates) {
+        if ((Test-Path $pc) -and ((Get-Item $pc).Length -gt 1000000)) {
+            $activePhar = $pc
+            break
         }
     }
 
-    $allPhpInis = @(
-        (Get-ChildItem -Path "C:\laragon\bin\php\*\php.ini" -File -ErrorAction SilentlyContinue),
-        (Get-ChildItem -Path "C:\xampp\php\php.ini" -File -ErrorAction SilentlyContinue)
+    if (-not $activePhar) {
+        Write-Host "   [i] Menyiapkan composer.phar resmi (LTS Stable)..." -ForegroundColor Yellow
+        $destPhar = Join-Path $programDataComposer "composer.phar"
+        $pharMirrors = @(
+            "https://getcomposer.org/composer-stable.phar",
+            "https://getcomposer.org/download/latest-stable/composer.phar"
+        )
+        $dlPhar = Download-FileWithFastMirrors -Urls $pharMirrors -DestinationPath $destPhar -ActivityTitle "Mengunduh Composer Standalone"
+        if ($dlPhar -and (Test-Path $destPhar)) {
+            $activePhar = $destPhar
+        }
+    }
+
+    if ($activePhar) {
+        foreach ($cDir in @($programDataComposer, $laragonComposer)) {
+            if (-not (Test-Path $cDir)) { New-Item -ItemType Directory -Path $cDir -Force | Out-Null }
+            Copy-Item $activePhar -Destination (Join-Path $cDir "composer.phar") -Force -ErrorAction SilentlyContinue
+            $batCode = "@echo off`r`n`"$phpPath`" `"%~dp0composer.phar`" %*`r`n"
+            [System.IO.File]::WriteAllText((Join-Path $cDir "composer.bat"), $batCode)
+        }
+        Write-Host "   [OK] Composer executable wrapper dikunci ke: $phpPath" -ForegroundColor Green
+    }
+
+    Add-ToSystemPath -DirToAdd $programDataComposer
+    Add-ToSystemPath -DirToAdd $laragonComposer
+    $env:Path = "$programDataComposer;$laragonComposer;" + $env:Path
+
+    # Optimalkan seluruh php.ini di Laragon dan XAMPP
+    $allPhpDirs = @(
+        (Get-ChildItem -Path "C:\laragon\bin\php" -Directory -ErrorAction SilentlyContinue),
+        (Get-ChildItem -Path "C:\xampp\php" -Directory -ErrorAction SilentlyContinue)
     ) | Where-Object { $_ -ne $null }
-
-    foreach ($iniFile in $allPhpInis) {
-        try {
-            $iniContent = [System.IO.File]::ReadAllText($iniFile.FullName)
-            $phpDir = $iniFile.Directory.FullName
-            $extDir = Join-Path $phpDir "ext"
-            $hasZipDll = (Test-Path (Join-Path $extDir "php_zip.dll")) -or (Test-Path (Join-Path $extDir "zip.dll"))
-
-            $newIni = $iniContent
-            if ($hasZipDll) {
-                $newIni = $newIni -replace '(?m)^;\s*extension\s*=\s*zip\b', 'extension=zip'
-                $newIni = $newIni -replace '(?m)^;\s*extension\s*=\s*php_zip\.dll\b', 'extension=php_zip.dll'
-                if ($newIni -notmatch '(?m)^extension\s*=\s*(zip|php_zip\.dll)\b') { $newIni += "`r`nextension=zip`r`n" }
-            } else {
-                $newIni = $newIni -replace '(?m)^\s*extension\s*=\s*php_zip\.dll\b', ';extension=php_zip.dll'
-                $newIni = $newIni -replace '(?m)^\s*extension\s*=\s*zip\b', ';extension=zip'
-            }
-
-            $extList = @("curl", "fileinfo", "openssl", "pdo_mysql", "mysqli", "mbstring", "gd", "intl", "exif", "bcmath", "sodium")
-            foreach ($ext in $extList) {
-                $hasExtDll = (Test-Path (Join-Path $extDir "php_$ext.dll")) -or (Test-Path (Join-Path $extDir "$ext.dll"))
-                if ($hasExtDll -or -not (Test-Path $extDir)) {
-                    $newIni = $newIni -replace "(?m)^\s*extension\s*=\s*(?:php_)?$ext(?:\.dll)?\b", ";extension=$ext"
-                    $matchedFirst = $false
-                    $iniLines = @($newIni -split "`r?`n")
-                    for ($li = 0; $li -lt $iniLines.Count; $li++) {
-                        if ($iniLines[$li] -match "^\s*;\s*extension\s*=\s*$ext\b") {
-                            $iniLines[$li] = "extension=$ext"
-                            $matchedFirst = $true
-                            break
-                        }
-                    }
-                    if ($matchedFirst) {
-                        $newIni = $iniLines -join "`r`n"
-                    } else {
-                        $newIni += "`r`nextension=$ext`r`n"
-                    }
-                }
-            }
-
-            if (Test-Path $extDir) {
-                $escapedExt = $extDir.Replace('\', '/')
-                $newIni = $newIni -replace '(?m)^\s*;?\s*extension_dir\s*=\s*"ext"', "extension_dir = `"$escapedExt`""
-                $newIni = $newIni -replace '(?m)^\s*;?\s*extension_dir\s*=\s*''ext''', "extension_dir = `"$escapedExt`""
-            }
-
-            if ($newIni -match '(?m)^\s*error_reporting\s*=') {
-                $newIni = $newIni -replace '(?m)^\s*error_reporting\s*=.*$', 'error_reporting = 22527'
-            } else {
-                $newIni += "`r`nerror_reporting = 22527`r`n"
-            }
-            if ($newIni -match '(?m)^\s*display_startup_errors\s*=') {
-                $newIni = $newIni -replace '(?m)^\s*display_startup_errors\s*=.*$', 'display_startup_errors = Off'
-            } else {
-                $newIni += "`r`ndisplay_startup_errors = Off`r`n"
-            }
-
-            if ($iniContent -ne $newIni) {
-                [System.IO.File]::WriteAllText($iniFile.FullName, $newIni)
-                Write-Host "   [OK] Konfigurasi php.ini bebas-warning diperbarui: $($iniFile.FullName)" -ForegroundColor Green
-            }
-        } catch {}
+    foreach ($pD in $allPhpDirs) {
+        $pIni = Join-Path $pD.FullName "php.ini"
+        Configure-LabPhpIni -IniPath $pIni -PhpFolder $pD.FullName
+    }
+    if (Test-Path "C:\xampp\php\php.ini") {
+        Configure-LabPhpIni -IniPath "C:\xampp\php\php.ini" -PhpFolder "C:\xampp\php"
     }
 
     $laragonGitBins = @("C:\laragon\bin\git\bin", "C:\laragon\bin\git\usr\bin")

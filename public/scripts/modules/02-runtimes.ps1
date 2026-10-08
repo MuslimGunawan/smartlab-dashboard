@@ -1,7 +1,32 @@
-﻿# ==============================================================================
+# ==============================================================================
 # MODUL 02: BASE RUNTIMES & EXTRACTORS (SMARTLAB LAB TI UNIMAL)
 # 7-Zip, WinRAR, Google Chrome Enterprise, Git for Windows, Java JDK 17, Python, Node.js
 # ==============================================================================
+
+# 0. Microsoft Visual C++ 2015-2022 Redistributable (x64) - Fondasi Runtime C++ (Apache, PHP, Python)
+function Setup-VcRedist {
+    Write-Host "`n========================================================" -ForegroundColor Cyan
+    Write-Host "Memproses: Microsoft Visual C++ 2015-2022 Redistributable (x64)" -ForegroundColor Cyan
+    Write-Host "========================================================" -ForegroundColor Cyan
+
+    $hasVCRedist = (Test-Path "C:\Windows\System32\vcruntime140.dll") -and (Test-Path "C:\Windows\System32\vcruntime140_1.dll")
+    if ($hasVCRedist) {
+        Write-Host "   [OK SUDAH TERPASANG] Visual C++ 2015-2022 x64 aktif di sistem." -ForegroundColor Green
+        return
+    }
+
+    $vcMirrors = @(
+        "https://aka.ms/vs/17/release/vc_redist.x64.exe",
+        "https://download.visualstudio.microsoft.com/download/pr/9b46e30a-2005-4f76-805a-5264879de7be/C13F5E12E8B90757E429B4F83F57189196E7C97ECB51D3A9C86105342AA25167/VC_redist.x64.exe"
+    )
+    $destVc = Join-Path $AppsDir "VC_redist.x64.exe"
+    Write-Host "   [i] Memasang runtime Visual C++ 2015-2022 x64..." -ForegroundColor Yellow
+    $dl = Download-FileWithFastMirrors -Urls $vcMirrors -DestinationPath $destVc -ActivityTitle "Mengunduh VC++ Redistributable"
+    if ($dl -and (Test-Path $destVc)) {
+        Start-Process -FilePath $destVc -ArgumentList "/quiet /norestart" -Wait -NoNewWindow
+        Write-Host "   [OK] Visual C++ 2015-2022 x64 berhasil dipasang!" -ForegroundColor Green
+    }
+}
 
 # 1. 7-Zip (High-Speed Multi-Format Archive Extractor)
 function Setup-7Zip {

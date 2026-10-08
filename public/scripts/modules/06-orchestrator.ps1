@@ -15,6 +15,10 @@ function Run-FullInstallation {
     Write-Host "`n[>>>] Memulai Otomasi Lengkap Standarisasi Software Lab TI..." -ForegroundColor Cyan
     Write-Host "      (Semua software wajib: Yang sudah terpasang otomatis diskip)`n" -ForegroundColor DarkGray
 
+    # 0. Microsoft Visual C++ 2015-2022 Redistributable (Fondasi Runtime x64)
+    Setup-VcRedist
+    Wait-PacedStep -Seconds 1
+
     # 1. 7-Zip (High-Speed Multi-Format Archive Extractor)
     Setup-7Zip
     Wait-PacedStep
@@ -226,15 +230,18 @@ function Test-LabSoftwareStatus {
     $laragonPhps = Get-ChildItem -Path "C:\laragon\bin\php" -Directory -ErrorAction SilentlyContinue |
                    Where-Object { Test-Path (Join-Path $_.FullName "php.exe") } |
                    Sort-Object {
+                       $isTs = if ($_.Name -notmatch "-nts-" -or (Test-Path (Join-Path $_.FullName "php*apache*.dll"))) { 1 } else { 0 }
+                       $v = [Version]::new(0, 0, 0)
                        if ($_.Name -match '(\d+(?:\.\d+)+)') {
                            try {
                                $vParts = $matches[1].Split('.')
                                $major = [int]$vParts[0]
                                $minor = if ($vParts.Count -gt 1) { [int]$vParts[1] } else { 0 }
                                $build = if ($vParts.Count -gt 2) { [int]$vParts[2] } else { 0 }
-                               [Version]::new($major, $minor, $build)
-                           } catch { [Version]::new(0, 0, 0) }
-                       } else { [Version]::new(0, 0, 0) }
+                               $v = [Version]::new($major, $minor, $build)
+                           } catch {}
+                       }
+                       return "$isTs-$($v.ToString(3).PadLeft(12, '0'))"
                    } -Descending
 
     $activePhpDir = $null
@@ -252,12 +259,12 @@ function Test-LabSoftwareStatus {
     }
 
     $composerSetupBin = "C:\ProgramData\ComposerSetup\bin"
+    $composerLaragonBin = "C:\laragon\bin\composer"
     $composerGlobalBin = Join-Path $env:APPDATA "Composer\vendor\bin"
-    if (Test-Path $composerSetupBin -and $env:Path -notlike "*$composerSetupBin*") {
-        $env:Path = "$composerSetupBin;" + $env:Path
-    }
-    if (Test-Path $composerGlobalBin -and $env:Path -notlike "*$composerGlobalBin*") {
-        $env:Path = "$composerGlobalBin;" + $env:Path
+    foreach ($cb in @($composerSetupBin, $composerLaragonBin, $composerGlobalBin)) {
+        if (Test-Path $cb -and $env:Path -notlike "*$cb*") {
+            $env:Path = "$cb;" + $env:Path
+        }
     }
 
     $cliChecks = @(
@@ -276,17 +283,24 @@ function Test-LabSoftwareStatus {
             }
         } },
         @{ Name = "Composer"; Cmd = {
-            $compBat = "C:\ProgramData\ComposerSetup\bin\composer.bat"
-            if (Test-Path $compBat) {
-                & $compBat --version --no-interaction 2>&1
+            $compBat1 = "C:\ProgramData\ComposerSetup\bin\composer.bat"
+            $compBat2 = "C:\laragon\bin\composer\composer.bat"
+            if (Test-Path $compBat1) {
+                & $compBat1 --version --no-interaction 2>&1
+            } elseif (Test-Path $compBat2) {
+                & $compBat2 --version --no-interaction 2>&1
             } else {
                 composer --version --no-interaction 2>&1
             }
         } },
         @{ Name = "Laravel CLI"; Cmd = {
-            $lBat = Join-Path $env:APPDATA "Composer\vendor\bin\laravel.bat"
-            if (Test-Path $lBat) {
-                & $lBat --version 2>&1
+            $lBat1 = Join-Path $env:APPDATA "Composer\vendor\bin\laravel.bat"
+            $lBat2 = "C:\Users\*\AppData\Roaming\Composer\vendor\bin\laravel.bat"
+            $foundL = Get-Item $lBat2 -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (Test-Path $lBat1) {
+                & $lBat1 --version 2>&1
+            } elseif ($foundL) {
+                & $foundL.FullName --version 2>&1
             } else {
                 laravel --version 2>&1
             }
@@ -314,26 +328,34 @@ function Test-LabSoftwareStatus {
                     $_ -notmatch '(?i)warning:' -and
                     $_ -notmatch '(?i)deprecated:' -and
                     $_ -notmatch '(?i)notice:' -and
+                    $_ -notmatch '(?i)in unknown on line' -and
                     -not [string]::IsNullOrWhiteSpace($_)
                 })
 
                 $firstLine = $null
                 if ($chk.Name -eq "PHP CLI") {
-                    $pMatch = $cleanLines | Where-Object { $_ -match '(?i)PHP\s+(\d+\.\d+\.\d+)' } | Select-Object -First 1
+                    $pMatch = $cleanLines | Where-Object { $_ -match '(?i)PHP\s+(\d+\.\d+(?:\.\d+)?)' } | Select-Object -First 1
                     if ($pMatch) {
                         $firstLine = $pMatch
-                    } elseif ($trimmed -match '(?i)PHP\s+(\d+\.\d+\.\d+)') {
+                    } elseif ($trimmed -match '(?i)PHP\s+(\d+\.\d+(?:\.\d+)?)') {
                         $firstLine = "PHP " + $matches[1] + " (cli)"
                     }
                 } elseif ($chk.Name -eq "Composer") {
                     $cMatch = $cleanLines | Where-Object { $_ -match '(?i)Composer (version|\d+\.)' } | Select-Object -First 1
                     if ($cMatch) { $firstLine = $cMatch }
+                } elseif ($chk.Name -eq "Laravel CLI") {
+                    $lMatch = $cleanLines | Where-Object { $_ -match '(?i)Laravel Installer' } | Select-Object -First 1
+                    if ($lMatch) { $firstLine = $lMatch }
                 }
                 if (-not $firstLine) {
                     $firstLine = if ($cleanLines.Count -gt 0) { [string]$cleanLines[0] } else { [string]$lines[0] }
                 }
                 $outStr = $firstLine.Trim()
-                $color = "Green"
+                if ($outStr -match '(?i)warning|error|unknown|belum terdeteksi|tidak ditemukan') {
+                    $color = "Yellow"
+                } else {
+                    $color = "Green"
+                }
             }
         } catch {
             $outStr = "Belum Terinstal / Perlu Restart Shell"
