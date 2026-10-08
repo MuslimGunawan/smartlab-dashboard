@@ -277,6 +277,27 @@ function Clean-LabDesktopIcons {
         }
     }
 
+    # 0. Hapus direktori folder QGIS di Desktop (misal: "QGIS 4.2.2" atau "QGIS 3.x.x") dan selamatkan shortcut resminya
+    foreach ($dir in $desktopDirs) {
+        $qgisDirs = Get-ChildItem -Path $dir -Filter "*QGIS*" -Directory -ErrorAction SilentlyContinue
+        foreach ($qd in $qgisDirs) {
+            $nestedLnk = Get-ChildItem -Path $qd.FullName -Filter "*QGIS*Desktop*.lnk" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $nestedLnk) {
+                $nestedLnk = Get-ChildItem -Path $qd.FullName -Filter "*QGIS*.lnk" -File -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch "Grass|OSGeo" } | Select-Object -First 1
+            }
+            if ($nestedLnk) {
+                $targetLnk = Join-Path $dir "QGIS Desktop.lnk"
+                if (-not (Test-Path $targetLnk)) {
+                    Copy-Item -Path $nestedLnk.FullName -Destination $targetLnk -Force -ErrorAction SilentlyContinue
+                }
+            }
+            try {
+                Remove-Item -Path $qd.FullName -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "   [x] Menghapus folder direktori QGIS dari Desktop: $($qd.Name)" -ForegroundColor DarkGray
+            } catch {}
+        }
+    }
+
     # Bersihkan duplikat shortcut QGIS atau shortcut folder lama yang dibuat oleh MSI QGIS
     foreach ($dir in $desktopDirs) {
         # 1. Hapus shortcut folder (misal: "QGIS 3.x.x.lnk" yang mengarah ke folder Start Menu)
@@ -295,12 +316,23 @@ function Clean-LabDesktopIcons {
             } catch {}
         }
 
-        # 2. Sisakan hanya satu "QGIS Desktop.lnk"
-        $qgisAppLnks = Get-ChildItem -Path $dir -Filter "*QGIS Desktop*.lnk" -File -ErrorAction SilentlyContinue
-        if ($qgisAppLnks -and $qgisAppLnks.Count -gt 1) {
-            for ($i = 1; $i -lt $qgisAppLnks.Count; $i++) {
-                Remove-Item -Path $qgisAppLnks[$i].FullName -Force -ErrorAction SilentlyContinue
-                Write-Host "   [x] Menghapus duplikat shortcut: $($qgisAppLnks[$i].Name)" -ForegroundColor DarkGray
+        # 2. Sisakan hanya satu shortcut QGIS Desktop yang rapi
+        $qgisAppLnks = Get-ChildItem -Path $dir -Filter "*QGIS*.lnk" -File -ErrorAction SilentlyContinue | Where-Object {
+            $_.Name -match '(?i)QGIS' -and $_.Name -notmatch '(?i)Grass|OSGeo'
+        }
+        if ($qgisAppLnks) {
+            $targetLnk = Join-Path $dir "QGIS Desktop.lnk"
+            $firstLnk = $qgisAppLnks[0]
+            if (-not (Test-Path $targetLnk)) {
+                try {
+                    Copy-Item -Path $firstLnk.FullName -Destination $targetLnk -Force -ErrorAction SilentlyContinue
+                } catch {}
+            }
+            foreach ($ql in $qgisAppLnks) {
+                if ($ql.FullName -ne $targetLnk) {
+                    Remove-Item -Path $ql.FullName -Force -ErrorAction SilentlyContinue
+                    Write-Host "   [x] Menghapus variasi shortcut QGIS: $($ql.Name) (Menyimpan QGIS Desktop.lnk)" -ForegroundColor DarkGray
+                }
             }
         }
     }
@@ -318,6 +350,14 @@ function Clean-LabDesktopIcons {
         foreach ($pu in $pmaUrls) {
             if (-not $foundPmaUrl) {
                 $foundPmaUrl = $true
+                # Pastikan icon file terisi di shortcut pertama
+                try {
+                    $uTxt = [System.IO.File]::ReadAllText($pu.FullName)
+                    if ($uTxt -notmatch "IconFile") {
+                        $uTxt += "`r`nIconIndex=0`r`nIconFile=C:\xampp\xampp-control.exe`r`n"
+                        [System.IO.File]::WriteAllText($pu.FullName, $uTxt)
+                    }
+                } catch {}
             } else {
                 Remove-Item -Path $pu.FullName -Force -ErrorAction SilentlyContinue
                 Write-Host "   [x] Menghapus duplikat phpMyAdmin shortcut: $($pu.Name)" -ForegroundColor DarkGray

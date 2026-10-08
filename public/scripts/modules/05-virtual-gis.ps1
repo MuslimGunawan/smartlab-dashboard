@@ -219,6 +219,17 @@ function Setup-GoogleEarth {
         if (Test-Path $gp) { $installedGe = $gp; break }
     }
 
+    if (-not $installedGe) {
+        $startLnk = Get-ChildItem -Path "C:\ProgramData\Microsoft\Windows\Start Menu\Programs", "$env:APPDATA\Microsoft\Windows\Start Menu\Programs" -Filter "*Google*Earth*.lnk" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($startLnk) {
+            try {
+                $wsh = New-Object -ComObject WScript.Shell
+                $target = $wsh.CreateShortcut($startLnk.FullName).TargetPath
+                if ($target -and (Test-Path $target)) { $installedGe = $target }
+            } catch {}
+        }
+    }
+
     if ($installedGe) {
         Write-Host "   [OK SUDAH TERPASANG] Google Earth Pro terdeteksi di $installedGe." -ForegroundColor Green
         Create-AppShortcut -TargetExe $installedGe -ShortcutName "Google Earth Pro"
@@ -326,6 +337,17 @@ function Setup-GoogleEarth {
                     elseif (Test-Path (Join-Path $val "client\googleearth.exe")) { $checkInstalled = Join-Path $val "client\googleearth.exe"; break }
                     elseif (Test-Path (Join-Path $val "googleearth.exe")) { $checkInstalled = Join-Path $val "googleearth.exe"; break }
                 }
+            }
+        }
+
+        if (-not $checkInstalled) {
+            $postLnk = Get-ChildItem -Path "C:\ProgramData\Microsoft\Windows\Start Menu\Programs", "$env:APPDATA\Microsoft\Windows\Start Menu\Programs" -Filter "*Google*Earth*.lnk" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($postLnk) {
+                try {
+                    $wsh = New-Object -ComObject WScript.Shell
+                    $target = $wsh.CreateShortcut($postLnk.FullName).TargetPath
+                    if ($target -and (Test-Path $target)) { $checkInstalled = $target }
+                } catch {}
             }
         }
     }

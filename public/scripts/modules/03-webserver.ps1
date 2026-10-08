@@ -200,7 +200,12 @@ function Setup-LaragonStack {
         if ($hasExtracted -or (Test-Path (Join-Path $customStackDir "bin"))) {
             Write-Host "`n   [>>>] Mengintegrasikan modul custom stack (PHP/MySQL/phpMyAdmin) ke C:\laragon..." -ForegroundColor Cyan
 
-            Get-Process -Name "laragon", "httpd", "mysqld" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Get-Process -Name "laragon", "httpd", "mysqld" -ErrorAction SilentlyContinue | Where-Object {
+                try {
+                    if ($_.ProcessName -eq "laragon") { return $true }
+                    return ($_.Path -like "*laragon*")
+                } catch { return $false }
+            } | Stop-Process -Force -ErrorAction SilentlyContinue
             Start-Sleep -Milliseconds 600
 
             $itemsToOverlay = @("bin", "etc", "usr")
@@ -216,26 +221,32 @@ function Setup-LaragonStack {
         }
     }
 
-    $allPhpDirs = Get-ChildItem -Path "$targetLaragon\bin\php" -Directory -ErrorAction SilentlyContinue
+    $allPhpDirs = Get-ChildItem -Path "$targetLaragon\bin\php" -Directory -ErrorAction SilentlyContinue | Where-Object {
+        Test-Path (Join-Path $_.FullName "php.exe")
+    }
     if ($allPhpDirs) {
+        # Prioritaskan versi Thread-Safe (TS) yang kompatibel penuh dengan Apache mod_php/fcgid, lalu versi terbaru
         $newestPhpDir = $allPhpDirs | Sort-Object {
+            $isTs = if ($_.Name -notmatch "-nts-" -or (Test-Path (Join-Path $_.FullName "php*apache*.dll"))) { 1 } else { 0 }
+            $v = [Version]::new(0, 0, 0)
             if ($_.Name -match '(\d+(?:\.\d+)+)') {
                 try {
                     $vParts = $matches[1].Split('.')
                     $major = [int]$vParts[0]
                     $minor = if ($vParts.Count -gt 1) { [int]$vParts[1] } else { 0 }
                     $build = if ($vParts.Count -gt 2) { [int]$vParts[2] } else { 0 }
-                    [Version]::new($major, $minor, $build)
-                } catch { [Version]::new(0, 0, 0) }
-            } else { [Version]::new(0, 0, 0) }
+                    $v = [Version]::new($major, $minor, $build)
+                } catch {}
+            }
+            return "$isTs-$($v.ToString(3).PadLeft(12, '0'))"
         } -Descending | Select-Object -First 1
 
         $usrLaragonIni = Join-Path $targetLaragon "usr\laragon.ini"
         if (Test-Path $usrLaragonIni) {
             try {
                 $iniTxt = [System.IO.File]::ReadAllText($usrLaragonIni)
-                if ($iniTxt -match '(?m)^Version=.*$') {
-                    $newIniTxt = $iniTxt -replace '(?m)^Version=.*$', "Version=$($newestPhpDir.Name)"
+                if ($iniTxt -match '\[php\]') {
+                    $newIniTxt = [System.Text.RegularExpressions.Regex]::Replace($iniTxt, '(?s)(\[php\][\r\n]+(?:(?!\[)[^\r\n]*[\r\n]+)*?Version\s*=\s*)[^\r\n]+', "${1}$($newestPhpDir.Name)")
                     [System.IO.File]::WriteAllText($usrLaragonIni, $newIniTxt)
                 }
             } catch {}
@@ -445,15 +456,18 @@ function Sync-UnifiedLaragonPhp {
     $laragonPhps = Get-ChildItem -Path "C:\laragon\bin\php" -Directory -ErrorAction SilentlyContinue |
                    Where-Object { Test-Path (Join-Path $_.FullName "php.exe") } |
                    Sort-Object {
+                       $isTs = if ($_.Name -notmatch "-nts-" -or (Test-Path (Join-Path $_.FullName "php*apache*.dll"))) { 1 } else { 0 }
+                       $v = [Version]::new(0, 0, 0)
                        if ($_.Name -match '(\d+(?:\.\d+)+)') {
                            try {
                                $vParts = $matches[1].Split('.')
                                $major = [int]$vParts[0]
                                $minor = if ($vParts.Count -gt 1) { [int]$vParts[1] } else { 0 }
                                $build = if ($vParts.Count -gt 2) { [int]$vParts[2] } else { 0 }
-                               [Version]::new($major, $minor, $build)
-                           } catch { [Version]::new(0, 0, 0) }
-                       } else { [Version]::new(0, 0, 0) }
+                               $v = [Version]::new($major, $minor, $build)
+                           } catch {}
+                       }
+                       return "$isTs-$($v.ToString(3).PadLeft(12, '0'))"
                    } -Descending
 
     if (-not $laragonPhps) {
@@ -534,6 +548,20 @@ function Sync-UnifiedLaragonPhp {
         } catch {}
     }
 
+    $usrLaragonIni = "C:\laragon\usr\laragon.ini"
+    if (Test-Path $usrLaragonIni) {
+        try {
+            $lIni = [System.IO.File]::ReadAllText($usrLaragonIni)
+            if ($lIni -match '\[php\]') {
+                $topPhpName = Split-Path -Leaf $topPhpDir
+                $newLIni = [System.Text.RegularExpressions.Regex]::Replace($lIni, '(?s)(\[php\][\r\n]+(?:(?!\[)[^\r\n]*[\r\n]+)*?Version\s*=\s*)[^\r\n]+', "${1}$topPhpName")
+                if ($lIni -ne $newLIni) {
+                    [System.IO.File]::WriteAllText($usrLaragonIni, $newLIni)
+                }
+            }
+        } catch {}
+    }
+
     try {
         $vOutput = & $topPhpExe -v 2>&1 | Out-String
         $firstLine = ($vOutput.Trim() -split "`r?`n")[0]
@@ -588,7 +616,12 @@ function Setup-XamppStack {
     if (Test-Path $xamppDir) {
         Write-Host "`n[i] Mengonfigurasi Port XAMPP agar tidak bentrok dengan Laragon..." -ForegroundColor Yellow
 
-        Get-Process -Name "xampp-control", "httpd", "mysqld" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Get-Process -Name "xampp-control", "httpd", "mysqld" -ErrorAction SilentlyContinue | Where-Object {
+            try {
+                if ($_.ProcessName -eq "xampp-control") { return $true }
+                return ($_.Path -like "*xampp*")
+            } catch { return $false }
+        } | Stop-Process -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 1
 
         $httpdConf = Join-Path $xamppDir "apache\conf\httpd.conf"
@@ -625,13 +658,26 @@ function Setup-XamppStack {
         if (Test-Path $myIni) {
             $myText = [System.IO.File]::ReadAllText($myIni)
             # Ganti semua baris port = ... menjadi port = 3307 baik di [client] maupun [mysqld]
-            $newMyText = [System.Text.RegularExpressions.Regex]::Replace($myText, '(?m)^\s*port\s*=\s*\d+\s*$', 'port = 3307')
+            $newMyText = [System.Text.RegularExpressions.Regex]::Replace($myText, '(?m)^\s*port\s*=\s*\d+.*$', 'port = 3307')
             if ($myText -ne $newMyText) {
                 [System.IO.File]::WriteAllText($myIni, $newMyText)
                 Write-Host "   [OK] MySQL Port XAMPP (Client & Daemon) dialihkan ke 3307 (Laragon standar di Port 3306)" -ForegroundColor Green
             } else {
                 Write-Host "   [OK] Port MySQL XAMPP sudah diatur pada 3307." -ForegroundColor Green
             }
+        }
+
+        $xamppPhpIni = Join-Path $xamppDir "php\php.ini"
+        if (Test-Path $xamppPhpIni) {
+            try {
+                $xIniText = [System.IO.File]::ReadAllText($xamppPhpIni)
+                $newXIniText = $xIniText -replace '(?m)^\s*;?\s*mysqli\.default_port\s*=.*$', 'mysqli.default_port = 3307'
+                $newXIniText = $newXIniText -replace '(?m)^\s*;?\s*mysql\.default_port\s*=.*$', 'mysql.default_port = 3307'
+                if ($xIniText -ne $newXIniText) {
+                    [System.IO.File]::WriteAllText($xamppPhpIni, $newXIniText)
+                    Write-Host "   [OK] PHP XAMPP (mysqli.default_port) dikonfigurasi ke 3307." -ForegroundColor Green
+                }
+            } catch {}
         }
 
         $pmaConfig = Join-Path $xamppDir "phpMyAdmin\config.inc.php"
@@ -658,6 +704,13 @@ function Setup-XamppStack {
                 $newPmaText = [System.Text.RegularExpressions.Regex]::Replace($newPmaText, "(\['AllowNoPassword'\]\s*=\s*)(?:false|0)", '${1}true')
             }
 
+            # Paksa koneksi via protokol TCP
+            if ($newPmaText -match "(\['connect_type'\]\s*=\s*)['`"][^'`"]*['`"]") {
+                $newPmaText = [System.Text.RegularExpressions.Regex]::Replace($newPmaText, "(\['connect_type'\]\s*=\s*)['`"][^'`"]*['`"]", '${1}''tcp''')
+            } else {
+                $newPmaText += "`r`n`$cfg['Servers'][`$i]['connect_type'] = 'tcp';`r`n"
+            }
+
             if ($newPmaText -notmatch "PmaNoRelation_DisableWarning") {
                 $newPmaText += "`r`n`$cfg['PmaNoRelation_DisableWarning'] = true;`r`n"
             } else {
@@ -669,7 +722,7 @@ function Setup-XamppStack {
 
             if ($pmaText -ne $newPmaText) {
                 [System.IO.File]::WriteAllText($pmaConfig, $newPmaText)
-                Write-Host "   [OK] phpMyAdmin XAMPP dikonfigurasi ke 127.0.0.1:3307" -ForegroundColor Green
+                Write-Host "   [OK] phpMyAdmin XAMPP dikonfigurasi ke 127.0.0.1:3307 (TCP)" -ForegroundColor Green
             }
         }
 
@@ -726,25 +779,38 @@ function Setup-XamppStack {
 
         # Jalankan service Apache dan MySQL XAMPP di latar belakang agar phpMyAdmin langsung dapat diakses
         Write-Host "   [i] Memulai service Apache & MySQL XAMPP (Port 8088 & 3307)..." -ForegroundColor Yellow
+        $xamppStart = Join-Path $xamppDir "xampp_start.exe"
+        $apacheStart = Join-Path $xamppDir "apache_start.bat"
+        $mysqlStart = Join-Path $xamppDir "mysql_start.bat"
         $httpdExe = Join-Path $xamppDir "apache\bin\httpd.exe"
         $mysqldExe = Join-Path $xamppDir "mysql\bin\mysqld.exe"
 
-        if (Test-Path $httpdExe) {
-            Start-Process -FilePath $httpdExe -WorkingDirectory (Join-Path $xamppDir "apache\bin") -WindowStyle Hidden -ErrorAction SilentlyContinue
+        if (Test-Path $xamppStart) {
+            Start-Process -FilePath $xamppStart -WorkingDirectory $xamppDir -WindowStyle Hidden -ErrorAction SilentlyContinue
+        } else {
+            if (Test-Path $apacheStart) {
+                Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$apacheStart`"" -WorkingDirectory $xamppDir -WindowStyle Hidden -ErrorAction SilentlyContinue
+            } elseif (Test-Path $httpdExe) {
+                Start-Process -FilePath $httpdExe -WorkingDirectory (Join-Path $xamppDir "apache\bin") -WindowStyle Hidden -ErrorAction SilentlyContinue
+            }
+
+            if (Test-Path $mysqlStart) {
+                Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$mysqlStart`"" -WorkingDirectory $xamppDir -WindowStyle Hidden -ErrorAction SilentlyContinue
+            } elseif (Test-Path $mysqldExe) {
+                Start-Process -FilePath $mysqldExe -ArgumentList "--defaults-file=`"$myIni`"", "--standalone" -WorkingDirectory (Join-Path $xamppDir "mysql\bin") -WindowStyle Hidden -ErrorAction SilentlyContinue
+            }
         }
-        if (Test-Path $mysqldExe) {
-            Start-Process -FilePath $mysqldExe -ArgumentList "--defaults-file=`"$myIni`"", "--standalone" -WorkingDirectory (Join-Path $xamppDir "mysql\bin") -WindowStyle Hidden -ErrorAction SilentlyContinue
-        }
-        Start-Sleep -Seconds 2
+        Start-Sleep -Seconds 3
 
         # Buat shortcut rapi di Desktop (XAMPP Control Panel & phpMyAdmin URL)
         $shDir = [Environment]::GetFolderPath("Desktop")
-        $wsh = New-Object -ComObject WScript.Shell
+        $pmaUrlFile = Join-Path $shDir "XAMPP phpMyAdmin (Port 8088).url"
+        $iconTarget = Join-Path $xamppDir "xampp-control.exe"
+        if (-not (Test-Path $iconTarget)) { $iconTarget = "C:\Windows\System32\shell32.dll" }
+        $urlContent = "[InternetShortcut]`r`nURL=http://localhost:8088/phpmyadmin/`r`nIconIndex=0`r`nIconFile=$iconTarget`r`n"
         try {
-            $pmaSc = $wsh.CreateShortcut((Join-Path $shDir "XAMPP phpMyAdmin (Port 8088).url"))
-            $pmaSc.TargetPath = "http://localhost:8088/phpmyadmin/"
-            $pmaSc.Save()
-            Write-Host "   [OK] Shortcut Desktop XAMPP phpMyAdmin (Port 8088) berhasil dibuat." -ForegroundColor Green
+            [System.IO.File]::WriteAllText($pmaUrlFile, $urlContent)
+            Write-Host "   [OK] Shortcut Desktop XAMPP phpMyAdmin (Port 8088) dengan ikon resmi berhasil dibuat." -ForegroundColor Green
         } catch {}
     }
 }
