@@ -22,30 +22,28 @@ function Test-WingetAvailable {
 }
 
 function Show-SmartLabBanner {
-    Write-Host "  ____________________________________________________________________________" -ForegroundColor DarkGreen
-    Write-Host " |                                                                            |" -ForegroundColor DarkGreen
-    Write-Host " |   .------------------.   " -NoNewline -ForegroundColor DarkGreen
-    Write-Host "  ____                      _   _          _     " -ForegroundColor Green
-    Write-Host " |   | [0]----[o]----[0]|   " -NoNewline -ForegroundColor Green
-    Write-Host " / ___| _ __ ___   __ _ _ __| |_| |    __ _| |__  " -ForegroundColor Green
-    Write-Host " |   |  |   .---.   |   |   " -NoNewline -ForegroundColor Green
-    Write-Host " \___ \| '_ ` _ \ / _` | '__| __| |   / _` | '_ \ " -ForegroundColor Yellow
-    Write-Host " |   |  |   |CPU|   |   |   " -NoNewline -ForegroundColor Yellow
-    Write-Host "  ___) | | | | | | (_| | |  | |_| |__| (_| | |_) |" -ForegroundColor Yellow
-    Write-Host " |   |  |   '---'   |   |   " -NoNewline -ForegroundColor Yellow
-    Write-Host " |____/|_| |_| |_|\__,_|_|   \__|_____\__,_|_.__/ " -ForegroundColor Green
-    Write-Host " |   | [o]----[0]----[o]|   " -ForegroundColor Green
-    Write-Host " |   '--------||--------'   " -NoNewline -ForegroundColor DarkGreen
-    Write-Host "  TEKNIK INFORMATIKA - UNIVERSITAS MALIKUSSALEH " -ForegroundColor White
-    Write-Host " |            ||            " -NoNewline -ForegroundColor DarkGreen
-    Write-Host "  [ STANDARISASI LABORATORIUM - VERSI $SCRIPT_CURRENT_VERSION ]               " -ForegroundColor Yellow
-    Write-Host " |________[========]________|_________________________________________________|" -ForegroundColor DarkGreen
+    Write-Host "  ┌────────────────────────────────────────────────────────────────────────────┐" -ForegroundColor Cyan
+    Write-Host "  │ " -NoNewline -ForegroundColor Cyan
+    Write-Host "SMARTLAB TI" -NoNewline -ForegroundColor White
+    Write-Host " │ " -NoNewline -ForegroundColor DarkGray
+    Write-Host "STANDARISASI LABORATORIUM KOMPUTER" -NoNewline -ForegroundColor Gray
+    Write-Host (" " * (42 - "STANDARISASI LABORATORIUM KOMPUTER".Length)) -NoNewline
+    Write-Host "[v$SCRIPT_CURRENT_VERSION]" -NoNewline -ForegroundColor Yellow
+    Write-Host " │" -ForegroundColor Cyan
+    Write-Host "  │ " -NoNewline -ForegroundColor Cyan
+    Write-Host "Teknik Informatika • Universitas Malikussaleh (UNIMAL)                     " -NoNewline -ForegroundColor DarkCyan
+    Write-Host "│" -ForegroundColor Cyan
+    Write-Host "  ├────────────────────────────────────────────────────────────────────────────┤" -ForegroundColor Cyan
     if ($script:IsAdmin) {
-        Write-Host "  Hak Akses Sesi : [ ADMINISTRATOR - HAK PENUH ]" -ForegroundColor Green
+        Write-Host "  │ Hak Akses Sesi : " -NoNewline -ForegroundColor Gray
+        Write-Host "● ADMINISTRATOR (Full Elevated Access)                    " -NoNewline -ForegroundColor Green
+        Write-Host "│" -ForegroundColor Cyan
     } else {
-        Write-Host "  Hak Akses Sesi : [ PENGGUNA STANDAR / NON-ADMIN ]" -ForegroundColor Yellow
-        Write-Host "  Catatan        : Menu [2] Unduh Master & [3] Cek Status dapat digunakan 100%." -ForegroundColor Gray
+        Write-Host "  │ Hak Akses Sesi : " -NoNewline -ForegroundColor Gray
+        Write-Host "▲ PENGGUNA STANDAR (Non-Admin / User Scope Only)           " -NoNewline -ForegroundColor Yellow
+        Write-Host "│" -ForegroundColor Cyan
     }
+    Write-Host "  └────────────────────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
     Write-Host ""
 }
 
@@ -560,9 +558,14 @@ function Install-AppSmart {
         [switch]$IsInteractive
     )
 
-    Write-Host "`n--------------------------------------------------------" -ForegroundColor Cyan
-    Write-Host "Memproses: $Name" -ForegroundColor Cyan
-    Write-Host "--------------------------------------------------------" -ForegroundColor Cyan
+    $boxTitle = "  ► MEMPROSES: $Name "
+    $padding = [math]::Max(0, 76 - $boxTitle.Length)
+    Write-Host "`n  ┌$('-' * 76)┐" -ForegroundColor DarkCyan
+    Write-Host "  │" -NoNewline -ForegroundColor DarkCyan
+    Write-Host "$boxTitle" -NoNewline -ForegroundColor Cyan
+    Write-Host (" " * $padding) -NoNewline
+    Write-Host "│" -ForegroundColor DarkCyan
+    Write-Host "  └$('-' * 76)┘" -ForegroundColor DarkCyan
 
     if ($CheckPath) {
         $checkList = @($CheckPath)
