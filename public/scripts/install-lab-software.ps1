@@ -31,7 +31,7 @@
 #  22. XAMPP Server (Port Anti-Bentrok)
 # ==============================================================================
 
-$SCRIPT_CURRENT_VERSION = "3.4.0"
+$SCRIPT_CURRENT_VERSION = "3.4.2"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $Host.UI.RawUI.WindowTitle = "Installer Otomatis 22 Software Lab TI Unimal - v$SCRIPT_CURRENT_VERSION"
 
@@ -1964,21 +1964,22 @@ function Setup-XamppStack {
     if (Test-Path $xamppDir) {
         Write-Host "`n[i] Mengonfigurasi Port XAMPP agar tidak bentrok dengan Laragon..." -ForegroundColor Yellow
 
-        # 0. Hentikan proses Apache & MySQL XAMPP jika sedang aktif agar melepaskan Port 80, 443, 3306
-        $runningXampp = Get-Process -Name "httpd", "mysqld" -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$xamppDir\*" }
-        if ($runningXampp) {
-            Write-Host "   [!] Menutup proses lama XAMPP agar port 80 & 3306 bebas untuk Laragon..." -ForegroundColor Yellow
-            $runningXampp | Stop-Process -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 1
-        }
+        # 0. Hentikan xampp-control, httpd, mysqld jika sedang berjalan agar file konfigurasi tidak terkunci / tertimpa saat keluar
+        Get-Process -Name "xampp-control", "httpd", "mysqld" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 1
 
-        # A. Konfigurasi Apache Port: Ganti Port 80 -> 8088 di httpd.conf
-        # (Port 8000 dipakai Laravel artisan serve, 8080 sering dipakai Tomcat/Spring/Vue, jadi 8088 dijamin 100% aman)
+        # A. Konfigurasi Apache HTTP Port: Pastikan seluruh binding dialihkan ke 8088 (Laragon di 80)
+        # Port 8000 dipakai Laravel artisan serve, 8080 dipakai Tomcat/Spring/Vue, jadi 8088 dijamin 100% aman
         $httpdConf = Join-Path $xamppDir "apache\conf\httpd.conf"
         if (Test-Path $httpdConf) {
             $confText = [System.IO.File]::ReadAllText($httpdConf)
-            $newConfText = $confText -replace '(?m)^Listen\s+(?:.*:)?(80|8080)\s*$', 'Listen 8088'
-            $newConfText = $newConfText -replace '(?m)^ServerName\s+localhost:(80|8080)\s*$', 'ServerName localhost:8088'
+            # Ubah setiap baris Listen yang bukan 8088 menjadi Listen 8088
+            $newConfText = [System.Text.RegularExpressions.Regex]::Replace($confText, '(?m)^Listen\s+(?:.*:)?(?!8088\b)\d+\s*$', 'Listen 8088')
+            # Ubah ServerName localhost:* menjadi ServerName localhost:8088
+            $newConfText = [System.Text.RegularExpressions.Regex]::Replace($newConfText, '(?m)^ServerName\s+localhost:(?!8088\b)\d+\s*$', 'ServerName localhost:8088')
+            if ($newConfText -notmatch '(?m)^Listen\s+8088') {
+                $newConfText = $newConfText -replace '(?m)^Listen\s+.*$', 'Listen 8088'
+            }
             if ($confText -ne $newConfText) {
                 [System.IO.File]::WriteAllText($httpdConf, $newConfText)
                 Write-Host "   [OK] Apache HTTP Port XAMPP dialihkan ke 8088 (Laragon di 80, Laravel di 8000, WebDev di 3000/5173)" -ForegroundColor Green
@@ -1991,9 +1992,9 @@ function Setup-XamppStack {
         $httpdSslConf = Join-Path $xamppDir "apache\conf\extra\httpd-ssl.conf"
         if (Test-Path $httpdSslConf) {
             $sslText = [System.IO.File]::ReadAllText($httpdSslConf)
-            $newSslText = $sslText -replace '(?m)^Listen\s+(443|8443)\s*$', 'Listen 8444'
-            $newSslText = $newSslText -replace '(?m)^<VirtualHost _default_:(443|8443)>\s*$', '<VirtualHost _default_:8444>'
-            $newSslText = $newSslText -replace '(?m)^ServerName\s+localhost:(443|8443)\s*$', 'ServerName localhost:8444'
+            $newSslText = [System.Text.RegularExpressions.Regex]::Replace($sslText, '(?m)^Listen\s+(?!8444\b)\d+\s*$', 'Listen 8444')
+            $newSslText = [System.Text.RegularExpressions.Regex]::Replace($newSslText, '(?m)^<VirtualHost _default_:(?!8444\b)\d+>', '<VirtualHost _default_:8444>')
+            $newSslText = [System.Text.RegularExpressions.Regex]::Replace($newSslText, '(?m)^ServerName\s+localhost:(?!8444\b)\d+\s*$', 'ServerName localhost:8444')
             if ($sslText -ne $newSslText) {
                 [System.IO.File]::WriteAllText($httpdSslConf, $newSslText)
                 Write-Host "   [OK] Apache SSL Port XAMPP dialihkan ke 8444 (Laragon SSL tetap di Port 443)" -ForegroundColor Green
@@ -2007,7 +2008,7 @@ function Setup-XamppStack {
         $myIni = Join-Path $xamppDir "mysql\bin\my.ini"
         if (Test-Path $myIni) {
             $myText = [System.IO.File]::ReadAllText($myIni)
-            $newMyText = $myText -replace '(?m)^port\s*=\s*3306\s*$', 'port = 3307'
+            $newMyText = [System.Text.RegularExpressions.Regex]::Replace($myText, '(?m)^port\s*=\s*(?!3307\b)\d+\s*$', 'port = 3307')
             if ($myText -ne $newMyText) {
                 [System.IO.File]::WriteAllText($myIni, $newMyText)
                 Write-Host "   [OK] MySQL Port XAMPP dialihkan ke 3307 (Laragon & Laravel standar tetap di Port 3306)" -ForegroundColor Green
@@ -2064,30 +2065,45 @@ function Setup-XamppStack {
             $iniTxt = [System.IO.File]::ReadAllText($xamppIni)
             
             # Ganti alokasi port di [ServicePorts] dan [Ports]
-            $newIniTxt = $iniTxt -replace '(?m)^Apache\s*=\s*(80|8080)\s*$', 'Apache = 8088'
-            $newIniTxt = $newIniTxt -replace '(?m)^ApacheSSL\s*=\s*(443|8443)\s*$', 'ApacheSSL = 8444'
-            $newIniTxt = $newIniTxt -replace '(?m)^MySQL\s*=\s*3306\s*$', 'MySQL = 3307'
+            $newIniTxt = [System.Text.RegularExpressions.Regex]::Replace($iniTxt, '(?m)^Apache\s*=\s*(?!8088\b)\d+\s*$', 'Apache = 8088')
+            $newIniTxt = [System.Text.RegularExpressions.Regex]::Replace($newIniTxt, '(?m)^ApacheSSL\s*=\s*(?!8444\b)\d+\s*$', 'ApacheSSL = 8444')
+            $newIniTxt = [System.Text.RegularExpressions.Regex]::Replace($newIniTxt, '(?m)^MySQL\s*=\s*(?!3307\b)\d+\s*$', 'MySQL = 3307')
 
             # Ganti port bawaan di [BinaryNames] atau [Services] jika ada
-            $newIniTxt = $newIniTxt -replace '(?m)^PortApache\s*=\s*(80|8080)\s*$', 'PortApache = 8088'
-            $newIniTxt = $newIniTxt -replace '(?m)^PortSSL\s*=\s*(443|8443)\s*$', 'PortSSL = 8444'
-            $newIniTxt = $newIniTxt -replace '(?m)^PortMySQL\s*=\s*3306\s*$', 'PortMySQL = 3307'
+            $newIniTxt = [System.Text.RegularExpressions.Regex]::Replace($newIniTxt, '(?m)^PortApache\s*=\s*(?!8088\b)\d+\s*$', 'PortApache = 8088')
+            $newIniTxt = [System.Text.RegularExpressions.Regex]::Replace($newIniTxt, '(?m)^PortSSL\s*=\s*(?!8444\b)\d+\s*$', 'PortSSL = 8444')
+            $newIniTxt = [System.Text.RegularExpressions.Regex]::Replace($newIniTxt, '(?m)^PortMySQL\s*=\s*(?!3307\b)\d+\s*$', 'PortMySQL = 3307')
 
             # Pastikan tombol Admin di XAMPP membuka alamat dengan port 8088 secara eksplisit
             if ($newIniTxt -match '(?m)^ApacheAdminURL\s*=') {
                 $newIniTxt = $newIniTxt -replace '(?m)^ApacheAdminURL\s*=.*$', 'ApacheAdminURL = http://localhost:8088/dashboard/'
-            } else {
+            } elseif ($newIniTxt -match '(?m)\[UserConfigs\]') {
                 $newIniTxt = $newIniTxt -replace '(?m)(\[UserConfigs\])', "`$1`r`nApacheAdminURL = http://localhost:8088/dashboard/"
+            } else {
+                $newIniTxt += "`r`n[UserConfigs]`r`nApacheAdminURL = http://localhost:8088/dashboard/"
             }
+
             if ($newIniTxt -match '(?m)^MySQLAdminURL\s*=') {
                 $newIniTxt = $newIniTxt -replace '(?m)^MySQLAdminURL\s*=.*$', 'MySQLAdminURL = http://localhost:8088/phpmyadmin/'
-            } else {
+            } elseif ($newIniTxt -match '(?m)\[UserConfigs\]') {
                 $newIniTxt = $newIniTxt -replace '(?m)(\[UserConfigs\])', "`$1`r`nMySQLAdminURL = http://localhost:8088/phpmyadmin/"
+            } else {
+                $newIniTxt += "`r`nMySQLAdminURL = http://localhost:8088/phpmyadmin/"
+            }
+
+            # Pastikan section [ServicePorts] juga memiliki Apache=8088 & MySQL=3307
+            if ($newIniTxt -match '(?m)\[ServicePorts\]') {
+                if ($newIniTxt -notmatch '(?m)^Apache\s*=\s*8088') {
+                    $newIniTxt = $newIniTxt -replace '(?m)(\[ServicePorts\])', "`$1`r`nApache = 8088"
+                }
+                if ($newIniTxt -notmatch '(?m)^MySQL\s*=\s*3307') {
+                    $newIniTxt = $newIniTxt -replace '(?m)(\[ServicePorts\])', "`$1`r`nMySQL = 3307"
+                }
             }
 
             if ($iniTxt -ne $newIniTxt) {
                 [System.IO.File]::WriteAllText($xamppIni, $newIniTxt)
-                Write-Host "   [OK] Port pada XAMPP Control Panel disinkronkan ke 8088/8444/3307 & Admin diarahkan ke localhost:8088." -ForegroundColor Green
+                Write-Host "   [OK] Port pada XAMPP Control Panel disinkronkan ke 8088/8444/3307 & Admin diarahkan ke http://localhost:8088." -ForegroundColor Green
             }
         }
 
@@ -2542,24 +2558,49 @@ function Setup-GoogleEarth {
         return
     }
 
+    # Direct official standalone full offline installer CDN mirrors
     $googleEarthMirrors = @(
+        "https://dl.google.com/release2/Earth/fnndz6bt2usy3ez2s7f3i6aq6i_7.3.7.1327/googleearth-win-pro-7.3.7.1327-x64.exe",
         "https://dl.google.com/dl/earth/client/advanced/current/googleearthprowin-x64.exe",
         "https://dl.google.com/earth/client/advanced/current/googleearthprowin-x64.exe",
         "https://dl.google.com/dl/earth/client/advanced/current/googleearthprowin.exe"
     )
 
+    # 1. Jalankan instalasi cerdas (ID Winget resmi: Google.EarthPro)
     Install-AppSmart -Name "Google Earth Pro" `
-                     -FilePattern @("*googleearthprowin*.exe", "*GoogleEarth*.exe", "*GoogleEarthPro*.exe", "*googleearth*.exe", "*googleearth*.msi") `
+                     -FilePattern @("*googleearth-win-pro*.exe", "*googleearthprowin*.exe", "*GoogleEarth*.exe", "*GoogleEarthPro*.exe", "*googleearth*.exe", "*googleearth*.msi") `
                      -DownloadUrls $googleEarthMirrors `
                      -SilentArgs "OMAHA=1 /S" `
-                     -WingetId "Google.GoogleEarthPro" `
+                     -WingetId "Google.EarthPro" `
                      -CheckPath $gePaths
 
+    # 2. Verifikasi & Fallback Khusus jika installer offline membutuhkan parameter alternatif atau ekstraksi MSI
+    $checkInstalled = $null
     foreach ($gp in $gePaths) {
-        if (Test-Path $gp) {
-            Create-AppShortcut -TargetExe $gp -ShortcutName "Google Earth Pro"
-            break
+        if (Test-Path $gp) { $checkInstalled = $gp; break }
+    }
+
+    if (-not $checkInstalled) {
+        $offlineGe = Get-ChildItem -Path $AppsDir -Filter "*googleearth*.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($offlineGe) {
+            Write-Host "   [i] Menjalankan fallback silent setup untuk $($offlineGe.Name)..." -ForegroundColor Yellow
+            # Coba switch alternatif Google Omaha / Silent installer
+            $altSwitches = @("/silent", "/s", "OMAHA=1 /silent")
+            foreach ($sw in $altSwitches) {
+                $argList = Convert-ArgsToArray $sw
+                Start-Process -FilePath $offlineGe.FullName -ArgumentList $argList -Wait -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 2
+                foreach ($gp in $gePaths) {
+                    if (Test-Path $gp) { $checkInstalled = $gp; break }
+                }
+                if ($checkInstalled) { break }
+            }
         }
+    }
+
+    if ($checkInstalled) {
+        Create-AppShortcut -TargetExe $checkInstalled -ShortcutName "Google Earth Pro"
+        Record-InstallResult -Name "Google Earth Pro" -Status "BERHASIL DIINSTAL" -Keterangan "Terpasang & shortcut dibuat"
     }
 }
 
