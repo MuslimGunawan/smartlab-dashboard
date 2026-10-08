@@ -91,7 +91,7 @@ function Run-FullInstallation {
     Install-AppSmart -Name "QGIS Desktop" `
                      -FilePattern "*QGIS*.msi" `
                      -DownloadUrls $qgisMirrors `
-                     -SilentArgs "/qn" `
+                     -SilentArgs "/qn /norestart ALLUSERS=1" `
                      -WingetId "OSGeo.QGIS" `
                      -CheckPath "C:\Program Files\QGIS *\bin\qgis-bin.exe"
     Wait-PacedStep

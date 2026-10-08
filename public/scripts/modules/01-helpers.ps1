@@ -678,13 +678,35 @@ function Install-AppSmart {
             }
         } else {
             Write-Host "[*] Menginstal $Name secara otomatis di latar belakang..." -ForegroundColor Cyan
-            $argsList = Convert-ArgsToArray $SilentArgs
 
             if ($installerFile.Extension -ieq ".msi") {
-                $msiArgs = @("/i", "`"$($installerFile.FullName)`"")
-                if ($argsList.Count -gt 0) { $msiArgs += $argsList } else { $msiArgs += @("/qn", "/norestart") }
-                $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru -NoNewWindow
+                # msiexec flags: filter out exe switches like /S, /VERYSILENT, /silent, /SILENT
+                $rawArgs = Convert-ArgsToArray $SilentArgs
+                $validMsiArgs = @("/i", "`"$($installerFile.FullName)`"")
+                $hasQuiet = $false
+                foreach ($a in $rawArgs) {
+                    if ($a -match '^(ALLUSERS=|ADDLOCAL=|TRANSFORMS=|TARGETDIR=|INSTALLDIR=|[a-zA-Z0-9_]+=)') {
+                        $validMsiArgs += $a
+                    } elseif ($a -match '^\/(qn|qb|quiet|passive|norestart|promptrestart)') {
+                        $validMsiArgs += $a
+                        if ($a -match 'qn|quiet|passive') { $hasQuiet = $true }
+                    }
+                }
+                if (-not $hasQuiet) { $validMsiArgs += @("/qn", "/norestart") }
+                
+                $logFile = Join-Path $env:TEMP ("msi_" + ($Name -replace '[^a-zA-Z0-9]', '_') + ".log")
+                $validMsiArgs += @("/l*v", "`"$logFile`"")
+
+                $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $validMsiArgs -Wait -PassThru -NoNewWindow
+                
+                # Jika error 1603 (Fatal error), coba fallback tanpa ALLUSERS=1 atau via UI pasif
+                if ($proc -and $proc.ExitCode -eq 1603) {
+                    Write-Host "   [i] Mencoba pemasangan ulang $Name (mode pasif/standar)..." -ForegroundColor Yellow
+                    $fallbackMsi = @("/i", "`"$($installerFile.FullName)`"", "/qn", "/norestart")
+                    $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList $fallbackMsi -Wait -PassThru -NoNewWindow
+                }
             } else {
+                $argsList = Convert-ArgsToArray $SilentArgs
                 $proc = Start-Process -FilePath $installerFile.FullName -ArgumentList $argsList -Wait -PassThru
             }
 
