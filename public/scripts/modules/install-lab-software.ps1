@@ -1,4 +1,4 @@
-# ==============================================================================
+﻿# ==============================================================================
 # SCRIPT OTOMASI INSTALASI SOFTWARE LABORATORIUM TEKNIK INFORMATIKA
 # UNIVERSITAS MALIKUSSALEH (UNIMAL)
 # ==============================================================================
@@ -239,25 +239,26 @@ while ($running) {
     Clear-Host
     if (Get-Command Show-SmartLabBanner -ErrorAction SilentlyContinue) { Show-SmartLabBanner }
     Write-Host "  PILIHAN TINDAKAN LAB:" -ForegroundColor Yellow
-    Write-Host "  ┌────────────────────────────────────────────────────────────────────────────┐" -ForegroundColor DarkGray
-    Write-Host "  │ [1] " -NoNewline -ForegroundColor Cyan
+    Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor DarkGray
+    Write-Host "  | [1] " -NoNewline -ForegroundColor Cyan
     Write-Host "Jalankan Otomasi Lengkap Lab " -NoNewline -ForegroundColor White
-    Write-Host "(Instalasi & Standarisasi 22 Software) │" -ForegroundColor Gray
-    Write-Host "  │ [2] " -NoNewline -ForegroundColor Cyan
+    Write-Host "(Instalasi & Standarisasi 22 Software) |" -ForegroundColor Gray
+    Write-Host "  | [2] " -NoNewline -ForegroundColor Cyan
     Write-Host "Instalasi Kustom / Pilihan   " -NoNewline -ForegroundColor White
-    Write-Host "(Pilih Software & Auto Smart Bundle)   │" -ForegroundColor Gray
-    Write-Host "  │ [3] " -NoNewline -ForegroundColor Cyan
+    Write-Host "(Pilih Software & Auto Smart Bundle)   |" -ForegroundColor Gray
+    Write-Host "  | [3] " -NoNewline -ForegroundColor Cyan
     Write-Host "Unduh Master Offline ke Apps " -NoNewline -ForegroundColor White
-    Write-Host "(Download Cache ke Flashdisk)          │" -ForegroundColor Gray
-    Write-Host "  │ [4] " -NoNewline -ForegroundColor Cyan
+    Write-Host "(Download Cache ke Flashdisk)          |" -ForegroundColor Gray
+    Write-Host "  | [4] " -NoNewline -ForegroundColor Cyan
     Write-Host "Verifikasi Status & Peta Port" -NoNewline -ForegroundColor White
-    Write-Host "(Audit CLI, Web Stack & Port Lab)      │" -ForegroundColor Gray
-    Write-Host "  │ [5] " -NoNewline -ForegroundColor Cyan
+    Write-Host "(Audit CLI, Web Stack & Port Lab)      |" -ForegroundColor Gray
+    Write-Host "  | [5] " -NoNewline -ForegroundColor Cyan
     Write-Host "Bersihkan Shortcut Desktop   " -NoNewline -ForegroundColor White
-    Write-Host "(Rapikan icon CLI & duplikat)          │" -ForegroundColor Gray
-    Write-Host "  │ [6] " -NoNewline -ForegroundColor DarkYellow
-    Write-Host "Keluar                                                                 │" -ForegroundColor DarkGray
-    Write-Host "  └────────────────────────────────────────────────────────────────────────────┘`n" -ForegroundColor DarkGray
+    Write-Host "(Rapikan icon CLI & duplikat)          |" -ForegroundColor Gray
+    Write-Host "  | [6] " -NoNewline -ForegroundColor DarkYellow
+    Write-Host "Keluar                                                                 |" -ForegroundColor DarkGray
+    Write-Host "  +----------------------------------------------------------------------------+" -ForegroundColor DarkGray
+    Write-Host ""
 
     $choice = Read-Host "  Pilih tindakan (1-6)"
 

@@ -1,4 +1,4 @@
-# ==============================================================================
+﻿# ==============================================================================
 # MODUL 03: WEB SERVER & DATABASE STACK (SMARTLAB LAB TI UNIMAL)
 # Laragon (WAMP Stack + Custom Overlay), Sync-UnifiedLaragonPhp,
 # XAMPP Server (Port Anti-Bentrok: 8088/8444/3307), Composer & Laravel Setup

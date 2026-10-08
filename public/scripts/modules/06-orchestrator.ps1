@@ -1,4 +1,4 @@
-# ==============================================================================
+﻿# ==============================================================================
 # MODUL 06: WORKFLOW ORCHESTRATOR & MENU HANDLERS (SMARTLAB LAB TI UNIMAL)
 # Run-FullInstallation, Test-LabSoftwareStatus, Start-DownloadOnlyMaster,
 # Run-CustomInstallation, Wait-PacedStep, Wait-EnterOnly

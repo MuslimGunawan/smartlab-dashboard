@@ -1,4 +1,4 @@
-# ==============================================================================
+﻿# ==============================================================================
 # MODUL 05: VIRTUALIZATION, GIS, HARDWARE & APPS (SMARTLAB LAB TI UNIMAL)
 # Oracle VM VirtualBox & Extension Pack, Google Earth Pro, QGIS Desktop,
 # Arduino IDE, Cisco Packet Tracer, Embarcadero Delphi, Proteus Design Suite
