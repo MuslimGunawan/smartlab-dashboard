@@ -111,8 +111,7 @@ $moduleFiles = @(
 )
 
 $baseModuleUrls = @(
-    "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/modules/",
-    "https://smartlab.is-best.net/scripts/modules/"
+    "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/modules/"
 )
 
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
@@ -160,7 +159,6 @@ function Check-ScriptSelfUpdate {
         $ts = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
         $updateUrls = @(
             "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/scripts/modules/install-lab-software.ps1?v=$ts",
-            "https://smartlab.is-best.net/scripts/modules/install-lab-software.ps1?v=$ts",
             "https://raw.githubusercontent.com/MuslimGunawan/smartlab-dashboard/main/public/install.ps1?v=$ts"
         )
         $remoteContent = $null
