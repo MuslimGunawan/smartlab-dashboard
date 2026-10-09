@@ -174,7 +174,8 @@ function Setup-LaragonStack {
 
             if (-not $laragonInstaller -and (Test-WingetAvailable)) {
                 try {
-                    & winget download --id "LeNgocKhoa.Laragon" --source winget -d "$AppsDir" --accept-package-agreements --accept-source-agreements --disable-interactivity 2>$null
+                    $wExe = Get-WingetExe
+                    & $wExe download --id "LeNgocKhoa.Laragon" --source winget -d "$AppsDir" --accept-package-agreements --accept-source-agreements --disable-interactivity 2>$null
                     $laragonInstaller = Get-ChildItem -Path $AppsDir -Filter "*laragon*.exe" -File -Recurse -ErrorAction SilentlyContinue | Where-Object {
                         $_.Name -ine "laragon.exe" -and $_.Name -notmatch "unins"
                     } | Select-Object -First 1
@@ -205,7 +206,8 @@ function Setup-LaragonStack {
         } elseif (Test-WingetAvailable) {
             Write-Host "   [i] Mencoba direct install Laragon via Winget..." -ForegroundColor Yellow
             try {
-                & winget install --id "LeNgocKhoa.Laragon" --source winget -e --silent --accept-source-agreements --accept-package-agreements --disable-interactivity 2>$null
+                $wExe = Get-WingetExe
+                & $wExe install --id "LeNgocKhoa.Laragon" --source winget -e --silent --accept-source-agreements --accept-package-agreements --disable-interactivity 2>$null
                 Get-Process -Name "laragon" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
             } catch {}
         }

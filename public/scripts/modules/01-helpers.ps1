@@ -9,9 +9,40 @@ function Invoke-LabKeepAlive {
     } catch {}
 }
 
+function Get-WingetExe {
+    $cmd = Get-Command "winget.exe" -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source -and (Test-Path $cmd.Source)) { return $cmd.Source }
+    if ($cmd -and $cmd.Definition -and (Test-Path $cmd.Definition)) { return $cmd.Definition }
+
+    $paths = @()
+    if ($env:LOCALAPPDATA) {
+        $paths += (Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\winget.exe")
+    }
+    $userApps = Get-ChildItem -Path "C:\Users\*\AppData\Local\Microsoft\WindowsApps\winget.exe" -File -ErrorAction SilentlyContinue
+    if ($userApps) {
+        foreach ($ua in $userApps) { $paths += $ua.FullName }
+    }
+    $msApps = Get-ChildItem -Path "C:\Program Files\WindowsApps\Microsoft.DesktopAppInstaller_*\winget.exe" -File -ErrorAction SilentlyContinue
+    if ($msApps) {
+        foreach ($ma in $msApps) { $paths += $ma.FullName }
+    }
+
+    foreach ($p in $paths) {
+        if ($p -and (Test-Path $p)) {
+            $wDir = Split-Path -Parent $p
+            if ($env:Path -notlike "*$wDir*") {
+                $env:Path = "$wDir;" + $env:Path
+            }
+            return $p
+        }
+    }
+    return "winget.exe"
+}
+
 function Test-WingetAvailable {
     try {
-        $testOut = & winget --version 2>&1 | Out-String
+        $wExe = Get-WingetExe
+        $testOut = & "$wExe" --version 2>&1 | Out-String
         if ($LASTEXITCODE -eq 0 -and $testOut -match '^\s*v?\d+\.\d+' -and $testOut -notmatch 'No applicable app licenses found') {
             return $true
         }
@@ -819,12 +850,13 @@ function Install-AppSmart {
                 if (-not [string]::IsNullOrWhiteSpace($WingetId) -and (Test-WingetAvailable)) {
                     Write-Host "   [>>>] Mencoba fallback instalasi resmi via Winget ($WingetId)..." -ForegroundColor Yellow
                     try {
+                        $wExe = Get-WingetExe
                         $wArgsList = @("install", "--id", "$WingetId", "--source", "winget", "-e", "--silent", "--accept-source-agreements", "--accept-package-agreements", "--disable-interactivity")
                         if (-not [string]::IsNullOrWhiteSpace($WingetArgs)) {
                             $extraW = Convert-ArgsToArray $WingetArgs
                             if ($extraW) { $wArgsList += $extraW }
                         }
-                        $pWinget = Start-Process -FilePath "winget.exe" -ArgumentList $wArgsList -Wait -PassThru -NoNewWindow -ErrorAction SilentlyContinue
+                        $pWinget = Start-Process -FilePath $wExe -ArgumentList $wArgsList -Wait -PassThru -NoNewWindow -ErrorAction SilentlyContinue
 
                         # Periksa kembali binary setelah winget
                         if ($CheckPath) {
@@ -862,8 +894,9 @@ function Install-AppSmart {
     if (-not [string]::IsNullOrWhiteSpace($WingetId) -and (Test-WingetAvailable)) {
         Write-Host "[i] Master offline belum ada. Mengunduh & menginstal via Winget ($WingetId)..." -ForegroundColor Yellow
         $wingetDownloadedSuccess = $false
+        $wExe = Get-WingetExe
         try {
-            $dlResult = & winget download --id "$WingetId" --source winget -d "$AppsDir" --accept-package-agreements --accept-source-agreements --disable-interactivity 2>&1 | Out-String
+            $dlResult = & $wExe download --id "$WingetId" --source winget -d "$AppsDir" --accept-package-agreements --accept-source-agreements --disable-interactivity 2>&1 | Out-String
             if ($LASTEXITCODE -eq 0) {
                 $downloadedFiles = Get-ChildItem -Path $AppsDir -File -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt (Get-Date).AddMinutes(-5) }
                 $wInstaller = $downloadedFiles | Where-Object { $_.Extension -match "exe|msi" } | Select-Object -First 1
@@ -892,7 +925,7 @@ function Install-AppSmart {
         if ($wingetDownloadedSuccess) { return }
 
         try {
-            $installed = & winget list --id "$WingetId" --source winget 2>$null
+            $installed = & $wExe list --id "$WingetId" --source winget 2>$null
             if ($LASTEXITCODE -eq 0 -and $installed -match $WingetId) {
                 Write-Host "[OK] $Name sudah terinstal di sistem ini." -ForegroundColor Green
                 Record-InstallResult -Name $Name -Status "SUDAH TERPASANG" -Keterangan "Terdeteksi via Winget (Skip)"
@@ -904,7 +937,7 @@ function Install-AppSmart {
                 $extraW = Convert-ArgsToArray $WingetArgs
                 if ($extraW) { $wArgsList += $extraW }
             }
-            $pWinget = Start-Process -FilePath "winget.exe" -ArgumentList $wArgsList -Wait -PassThru -NoNewWindow -ErrorAction SilentlyContinue
+            $pWinget = Start-Process -FilePath $wExe -ArgumentList $wArgsList -Wait -PassThru -NoNewWindow -ErrorAction SilentlyContinue
 
             # Periksa kembali keberadaan file executable setelah instalasi winget
             $wBinary = $false

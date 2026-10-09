@@ -268,6 +268,15 @@ function Setup-GoogleEarth {
         if ($existingGe.Extension -ieq ".msi") {
             Write-Host "   [i] Memasang MSI Google Earth Pro langsung..." -ForegroundColor Cyan
             Start-Process -FilePath "msiexec.exe" -ArgumentList "/i `"$($existingGe.FullName)`" /qn /norestart" -Wait -NoNewWindow
+            $pollCount = 15
+            while ($pollCount -gt 0) {
+                Start-Sleep -Seconds 2
+                foreach ($gp in $gePaths) {
+                    if (Test-Path $gp) { $checkInstalled = $gp; break }
+                }
+                if ($checkInstalled) { break }
+                $pollCount--
+            }
         } elseif (Test-Path $sevenZipExe) {
             Write-Host "   [i] Membongkar installer .exe Google Earth Pro untuk mengambil file MSI..." -ForegroundColor Yellow
             $extractGeDir = Join-Path $AppsDir "GoogleEarth_Extracted"
@@ -278,40 +287,34 @@ function Setup-GoogleEarth {
             if ($extractedMsi) {
                 Write-Host "   [i] Menjalankan MSI resmi: $($extractedMsi.Name)..." -ForegroundColor Green
                 Start-Process -FilePath "msiexec.exe" -ArgumentList "/i `"$($extractedMsi.FullName)`" /qn /norestart" -Wait -NoNewWindow
+                $pollCount = 15
+                while ($pollCount -gt 0) {
+                    Start-Sleep -Seconds 2
+                    foreach ($gp in $gePaths) {
+                        if (Test-Path $gp) { $checkInstalled = $gp; break }
+                    }
+                    if ($checkInstalled) { break }
+                    $pollCount--
+                }
             }
-        }
-
-        # Polling tunggu proses msiexec/Omaha selesai menulis file ke disk (maksimal 30 detik)
-        Write-Host "   [i] Memverifikasi proses instalasi Google Earth Pro..." -ForegroundColor Yellow
-        $pollCount = 15
-        while ($pollCount -gt 0) {
-            foreach ($gp in $gePaths) {
-                if (Test-Path $gp) { $checkInstalled = $gp; break }
-            }
-            if ($checkInstalled) { break }
-            Start-Sleep -Seconds 2
-            $pollCount--
         }
 
         if (-not $checkInstalled -and $existingGe.Extension -ieq ".exe") {
-            Write-Host "   [i] Menjalankan silent switch untuk $($existingGe.Name)..." -ForegroundColor Yellow
-            $switches = @("OMAHA=1 /S", "OMAHA=1 /silent", "/S", "/silent", "/qn", "/VERYSILENT /NORESTART")
+            $switches = @("OMAHA=1 /silent", "/qn", "/S", "/VERYSILENT /NORESTART")
             foreach ($sw in $switches) {
+                Write-Host "   [i] Menjalankan silent switch Google Earth Pro ($sw)..." -ForegroundColor Yellow
                 $argList = Convert-ArgsToArray $sw
-                $pGe = Start-Process -FilePath $existingGe.FullName -ArgumentList $argList -Wait -PassThru -NoNewWindow -ErrorAction SilentlyContinue
+                Start-Process -FilePath $existingGe.FullName -ArgumentList $argList -Wait -NoNewWindow -ErrorAction SilentlyContinue
                 
-                # Tunggu proses setup background selesai (jika Omaha memicu child process installer)
-                $maxWait = 15
-                while ($maxWait -gt 0) {
-                    $bgInstaller = Get-Process -Name "*googleearth*", "*setup*", "*msiexec*" -ErrorAction SilentlyContinue |
-                                   Where-Object { $_.Path -like "*Google*" -or $_.CommandLine -like "*googleearth*" }
-                    if (-not $bgInstaller) { break }
+                # Tunggu proses background installer menyalin file ke disk
+                $pollWait = 12
+                while ($pollWait -gt 0) {
                     Start-Sleep -Seconds 2
-                    $maxWait -= 2
-                }
-
-                foreach ($gp in $gePaths) {
-                    if (Test-Path $gp) { $checkInstalled = $gp; break }
+                    foreach ($gp in $gePaths) {
+                        if (Test-Path $gp) { $checkInstalled = $gp; break }
+                    }
+                    if ($checkInstalled) { break }
+                    $pollWait--
                 }
                 if ($checkInstalled) { break }
             }
@@ -319,16 +322,17 @@ function Setup-GoogleEarth {
     }
 
     if (-not $checkInstalled -and (Test-WingetAvailable)) {
-        Write-Host "   [i] Mencoba pemasangan Google Earth Pro via Winget..." -ForegroundColor Yellow
+        Write-Host "   [i] Memasang Google Earth Pro via Winget..." -ForegroundColor Yellow
         try {
-            & winget install --id "Google.EarthPro" --source winget -e --silent --accept-source-agreements --accept-package-agreements --disable-interactivity 2>$null
-            $wPoll = 10
+            $wExe = Get-WingetExe
+            & $wExe install --id "Google.EarthPro" --source winget -e --silent --accept-source-agreements --accept-package-agreements --disable-interactivity 2>$null
+            $wPoll = 15
             while ($wPoll -gt 0) {
+                Start-Sleep -Seconds 2
                 foreach ($gp in $gePaths) {
                     if (Test-Path $gp) { $checkInstalled = $gp; break }
                 }
                 if ($checkInstalled) { break }
-                Start-Sleep -Seconds 2
                 $wPoll--
             }
         } catch {}

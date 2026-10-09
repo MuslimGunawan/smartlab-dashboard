@@ -214,8 +214,35 @@ function Setup-VisualStudio {
     }
 
     $vsArgs = "--passive --norestart --add Microsoft.VisualStudio.Workload.NativeDesktop --includeRecommended"
+    
+    $existingVsInstaller = Get-ChildItem -Path $AppsDir -Filter "*vs*community*.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $existingVsInstaller) {
+        $existingVsInstaller = Get-ChildItem -Path $AppsDir -Filter "vs_setup*.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    }
+
+    if (-not $existingVsInstaller) {
+        Write-Host "   [i] Mengunduh official bootstrapper Visual Studio 2022 Community dari Microsoft CDN..." -ForegroundColor Cyan
+        $vsBootUrl = "https://aka.ms/vs/17/release/vs_community.exe"
+        $destBoot = Join-Path $AppsDir "vs_community.exe"
+        $dlBoot = Download-FileWithFastMirrors -Urls @($vsBootUrl) -DestinationPath $destBoot -ActivityTitle "Mengunduh VS 2022 Community Bootstrapper"
+        if ($dlBoot -and (Test-Path $destBoot)) {
+            $existingVsInstaller = Get-Item $destBoot
+        }
+    }
+
+    if ($existingVsInstaller) {
+        Write-Host "   [i] Menjalankan installer Visual Studio 2022 Community (Desktop C++)..." -ForegroundColor Cyan
+        Write-Host "       (Proses ini mengunduh & memasang komponen C++ di latar belakang, mohon tunggu beberapa menit)..." -ForegroundColor Gray
+        $proc = Start-Process -FilePath $existingVsInstaller.FullName -ArgumentList (Convert-ArgsToArray $vsArgs) -Wait -PassThru
+        if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
+            Write-Host "   [OK] Visual Studio 2022 Community berhasil diinstal!" -ForegroundColor Green
+            Record-InstallResult -Name "Microsoft Visual Studio 2022 Community" -Status "BERHASIL DIINSTAL" -Keterangan "Instalasi bootstrapper sukses"
+            return
+        }
+    }
+
     if (Test-WingetAvailable) {
-        Write-Host "   [i] Menjalankan instalasi Visual Studio standar/winget..." -ForegroundColor Yellow
+        Write-Host "   [i] Menjalankan instalasi Visual Studio 2022 via Winget..." -ForegroundColor Yellow
         Install-AppSmart -Name "Microsoft Visual Studio 2022 Community" `
                          -FilePattern @("*Visual*Studio*Community*.exe", "*vs*Community*.exe", "*Community*.exe", "*vs_setup*.exe", "*vs_installer*.exe") `
                          -SilentArgs $vsArgs `
@@ -223,19 +250,8 @@ function Setup-VisualStudio {
                          -WingetArgs "--override `"$vsArgs`"" `
                          -CheckPath $vsPaths
     } else {
-        $existingVsInstaller = Get-ChildItem -Path $AppsDir -Filter "*vs*community*.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-        if (-not $existingVsInstaller) {
-            $existingVsInstaller = Get-ChildItem -Path $AppsDir -Filter "vs_setup*.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-        }
-        if ($existingVsInstaller) {
-            Install-AppSmart -Name "Microsoft Visual Studio 2022 Community" `
-                             -FilePattern @($existingVsInstaller.Name) `
-                             -SilentArgs $vsArgs `
-                             -CheckPath $vsPaths
-        } else {
-            Write-Host "   [!] Visual Studio 2022 memerlukan file master offline atau VS Layout di Apps/." -ForegroundColor Yellow
-            Record-InstallResult -Name "Microsoft Visual Studio 2022 Community" -Status "BELUM TERSEDIA" -Keterangan "Menunggu VS Layout di Apps/"
-        }
+        Write-Host "   [!] Visual Studio 2022 memerlukan koneksi internet aktif atau VS Layout di Apps/." -ForegroundColor Yellow
+        Record-InstallResult -Name "Microsoft Visual Studio 2022 Community" -Status "GAGAL" -Keterangan "Gagal unduh bootstrapper/winget"
     }
 }
 
@@ -506,8 +522,11 @@ function Setup-FlutterSDK {
             if (Test-Path $tempBtJar) { Remove-Item -Path $tempBtJar -Recurse -Force -ErrorAction SilentlyContinue }
             New-Item -ItemType Directory -Path $tempBtJar -Force | Out-Null
             [System.IO.File]::WriteAllText((Join-Path $tempBtJar "stub.txt"), "Android Build Tools Stub")
+            $tempZip = Join-Path $env:TEMP "dummy_dx_temp.zip"
+            if (Test-Path $tempZip) { Remove-Item -Path $tempZip -Force -ErrorAction SilentlyContinue }
+            Compress-Archive -Path "$tempBtJar\*" -DestinationPath $tempZip -Force
             if (Test-Path $dxJar) { Remove-Item -Path $dxJar -Force -ErrorAction SilentlyContinue }
-            Compress-Archive -Path "$tempBtJar\*" -DestinationPath $dxJar -Force
+            Move-Item -Path $tempZip -Destination $dxJar -Force
             Remove-Item -Path $tempBtJar -Recurse -Force -ErrorAction SilentlyContinue
         }
 
@@ -522,8 +541,11 @@ function Setup-FlutterSDK {
             New-Item -ItemType Directory -Path $tempPlatSrc -Force | Out-Null
             [System.IO.File]::WriteAllText((Join-Path $tempPlatSrc "AndroidManifest.xml"), "<?xml version=`"1.0`" encoding=`"utf-8`"?><manifest package=`"android`"/>")
             [System.IO.File]::WriteAllText((Join-Path $tempPlatSrc "classes.dex"), "DEX DUMMY")
+            $tempPlatZip = Join-Path $env:TEMP "dummy_android_plat.zip"
+            if (Test-Path $tempPlatZip) { Remove-Item -Path $tempPlatZip -Force -ErrorAction SilentlyContinue }
+            Compress-Archive -Path "$tempPlatSrc\*" -DestinationPath $tempPlatZip -Force
             if (Test-Path $dummyJar) { Remove-Item -Path $dummyJar -Force -ErrorAction SilentlyContinue }
-            Compress-Archive -Path "$tempPlatSrc\*" -DestinationPath $dummyJar -Force
+            Move-Item -Path $tempPlatZip -Destination $dummyJar -Force
             Remove-Item -Path $tempPlatSrc -Recurse -Force -ErrorAction SilentlyContinue
         }
         $buildProp = Join-Path $defaultPlat "build.prop"
