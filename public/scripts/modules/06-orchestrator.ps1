@@ -10,6 +10,67 @@ function Wait-PacedStep {
     Start-Sleep -Seconds $Seconds
 }
 
+function Reconcile-FailedInstallResults {
+    Write-Host "`n   [i] Memverifikasi ulang integritas hasil instalasi..." -ForegroundColor DarkGray
+    $recheckMap = @{
+        "Google Earth Pro" = @(
+            "C:\Program Files\Google\Google Earth Pro\client\googleearth.exe",
+            "C:\Program Files (x86)\Google\Google Earth Pro\client\googleearth.exe",
+            "C:\Program Files\Google\Google Earth\client\googleearth.exe",
+            "$env:LOCALAPPDATA\Google\Google Earth Pro\client\googleearth.exe"
+        );
+        "Microsoft Visual Studio 2022 Community" = @(
+            "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe",
+            "C:\Program Files\Microsoft Visual Studio\2022\*\Common7\IDE\devenv.exe",
+            "C:\Program Files (x86)\Microsoft Visual Studio\2022\*\Common7\IDE\devenv.exe",
+            "C:\Program Files\Microsoft Visual Studio\*\*\Common7\IDE\devenv.exe"
+        );
+        "Visual Studio 2022" = @(
+            "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe",
+            "C:\Program Files\Microsoft Visual Studio\2022\*\Common7\IDE\devenv.exe",
+            "C:\Program Files (x86)\Microsoft Visual Studio\2022\*\Common7\IDE\devenv.exe",
+            "C:\Program Files\Microsoft Visual Studio\*\*\Common7\IDE\devenv.exe"
+        );
+        "Oracle VM VirtualBox" = @(
+            "C:\Program Files\Oracle\VirtualBox\VirtualBox.exe",
+            "C:\Program Files (x86)\Oracle\VirtualBox\VirtualBox.exe"
+        );
+        "QGIS Desktop" = @(
+            "C:\Program Files\QGIS *\bin\qgis-bin.exe",
+            "C:\Program Files\QGIS *\bin\qgis.exe"
+        );
+        "Cisco Packet Tracer" = @(
+            "C:\Program Files\Cisco Packet Tracer *\bin\PacketTracer.exe",
+            "C:\Program Files (x86)\Cisco Packet Tracer *\bin\PacketTracer.exe"
+        );
+        "Arduino IDE" = @(
+            "C:\Program Files\Arduino IDE\Arduino IDE.exe",
+            "C:\Program Files\Arduino\arduino.exe",
+            "$env:LOCALAPPDATA\Programs\Arduino IDE\Arduino IDE.exe"
+        )
+    }
+
+    foreach ($item in $script:InstallResults) {
+        if ($item.Status -in @("GAGAL", "BELUM TERSEDIA")) {
+            $paths = $recheckMap[$item.Name]
+            if ($paths) {
+                $foundFile = $null
+                foreach ($p in $paths) {
+                    $match = if ($p -match '\*') { Get-ChildItem -Path $p -File -ErrorAction SilentlyContinue | Select-Object -First 1 } else { Get-Item -Path $p -ErrorAction SilentlyContinue }
+                    if ($match) { $foundFile = $match; break }
+                }
+                if ($foundFile) {
+                    $item.Status = "BERHASIL DIINSTAL"
+                    $item.Keterangan = "Terpasang & tervalidasi di sistem"
+                    if (Test-Path $foundFile.FullName -PathType Leaf) {
+                        Create-AppShortcut -TargetExe $foundFile.FullName -ShortcutName $item.Name
+                    }
+                }
+            }
+        }
+    }
+}
+
 function Run-FullInstallation {
     $script:InstallResults = @()
     Write-Host "`n[>>>] Memulai Otomasi Lengkap Standarisasi Software Lab TI..." -ForegroundColor Cyan
@@ -178,6 +239,9 @@ function Run-FullInstallation {
     # Bersihkan & rapikan Desktop (Hapus duplikat dan icon background CLI/runtime)
     Clean-LabDesktopIcons
     Wait-PacedStep -Seconds 1
+
+    # Rekonsiliasi ulang installer async/background yang selesai belakangan
+    Reconcile-FailedInstallResults
 
     # REKAPITULASI HASIL INSTALASI
     Clear-Host
@@ -385,7 +449,14 @@ function Test-LabSoftwareStatus {
         @{ Name = "Git for Windows";     Path = @("C:\Program Files\Git\cmd\git.exe", "C:\Program Files\Git\bin\git.exe"); Reg = "*Git*" },
         @{ Name = "Delphi (RAD Studio)"; Path = @("C:\Program Files*\Embarcadero\Studio\*\bin\bds.exe", "C:\Program Files (x86)\Embarcadero\Studio\*\bin\bds.exe"); Reg = "*Delphi*" },
         @{ Name = "Cisco Packet Tracer"; Path = @("C:\Program Files\Cisco Packet Tracer *\bin\PacketTracer.exe", "C:\Program Files (x86)\Cisco Packet Tracer *\bin\PacketTracer.exe"); Reg = "*Packet Tracer*" },
-        @{ Name = "Visual Studio 2022";  Path = @("C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe", "C:\Program Files (x86)\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe"); Reg = "*Visual Studio*" },
+        @{ Name = "Visual Studio 2022";  Path = @(
+            "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe",
+            "C:\Program Files\Microsoft Visual Studio\2022\Professional\Common7\IDE\devenv.exe",
+            "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\devenv.exe",
+            "C:\Program Files (x86)\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe",
+            "C:\Program Files\Microsoft Visual Studio\2022\*\Common7\IDE\devenv.exe",
+            "C:\Program Files\Microsoft Visual Studio\*\*\Common7\IDE\devenv.exe"
+        ); Reg = "*Visual Studio *2022*" },
         @{ Name = "Proteus Design Suite";Path = @("C:\Program Files*\Labcenter Electronics\Proteus *\BIN\PDS.EXE", "C:\Program Files (x86)\Labcenter Electronics\Proteus *\BIN\PDS.EXE"); Reg = "*Proteus*" },
         @{ Name = "Android Studio";      Path = @("C:\Program Files\Android\Android Studio\bin\studio64.exe", "C:\Program Files (x86)\Android\Android Studio\bin\studio64.exe", "C:\Users\*\AppData\Local\Programs\Android\Android Studio\bin\studio64.exe"); Reg = "*Android Studio*" },
         @{ Name = "Oracle VirtualBox";   Path = @("C:\Program Files\Oracle\VirtualBox\VirtualBox.exe", "C:\Program Files (x86)\Oracle\VirtualBox\VirtualBox.exe"); Reg = "*VirtualBox*" },
@@ -453,9 +524,22 @@ function Test-LabSoftwareStatus {
             } catch {}
         }
 
+        if (-not $found -and $gui.Name -eq "Visual Studio 2022") {
+            $vswhere = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
+            if (Test-Path $vswhere) {
+                $vsInstallPath = & $vswhere -latest -products * -property installationPath 2>$null
+                if ($vsInstallPath -and (Test-Path $vsInstallPath)) {
+                    $devenv = Join-Path $vsInstallPath "Common7\IDE\devenv.exe"
+                    if (Test-Path $devenv) { $found = $devenv }
+                    else { $found = "VS ($vsInstallPath)" }
+                }
+            }
+        }
+
         if (-not $found) {
-            $firstWord = $gui.Name.Split(' ')[0]
-            $lnk = Get-ChildItem -Path "C:\ProgramData\Microsoft\Windows\Start Menu\Programs", "C:\Users\*\AppData\Roaming\Microsoft\Windows\Start Menu\Programs" -Filter "*$firstWord*.lnk" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            $filterPattern = if ($gui.Name -eq "Visual Studio 2022") { "*Visual Studio 2022*.lnk" } else { "*$($gui.Name.Split(' ')[0])*.lnk" }
+            $lnk = Get-ChildItem -Path "C:\ProgramData\Microsoft\Windows\Start Menu\Programs", "C:\Users\*\AppData\Roaming\Microsoft\Windows\Start Menu\Programs" -Filter $filterPattern -Recurse -File -ErrorAction SilentlyContinue |
+                   Where-Object { if ($gui.Name -eq "Visual Studio 2022") { $_.Name -notmatch "Code" } else { $true } } | Select-Object -First 1
             if ($lnk) {
                 $found = "Menu Start ($($lnk.Name))"
             }
@@ -1062,6 +1146,7 @@ function Run-CustomInstallation {
     }
 
     Clean-LabDesktopIcons
+    Reconcile-FailedInstallResults
 
     Write-Host "`n==============================================================================" -ForegroundColor Green
     Write-Host "                SELESAI - INSTALASI KUSTOM LAB TI SELESAI                     " -ForegroundColor Green

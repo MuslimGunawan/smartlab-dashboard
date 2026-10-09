@@ -281,9 +281,16 @@ function Setup-GoogleEarth {
             }
         }
 
-        Start-Sleep -Seconds 2
-        foreach ($gp in $gePaths) {
-            if (Test-Path $gp) { $checkInstalled = $gp; break }
+        # Polling tunggu proses msiexec/Omaha selesai menulis file ke disk (maksimal 30 detik)
+        Write-Host "   [i] Memverifikasi proses instalasi Google Earth Pro..." -ForegroundColor Yellow
+        $pollCount = 15
+        while ($pollCount -gt 0) {
+            foreach ($gp in $gePaths) {
+                if (Test-Path $gp) { $checkInstalled = $gp; break }
+            }
+            if ($checkInstalled) { break }
+            Start-Sleep -Seconds 2
+            $pollCount--
         }
 
         if (-not $checkInstalled -and $existingGe.Extension -ieq ".exe") {
@@ -294,7 +301,7 @@ function Setup-GoogleEarth {
                 $pGe = Start-Process -FilePath $existingGe.FullName -ArgumentList $argList -Wait -PassThru -NoNewWindow -ErrorAction SilentlyContinue
                 
                 # Tunggu proses setup background selesai (jika Omaha memicu child process installer)
-                $maxWait = 30
+                $maxWait = 15
                 while ($maxWait -gt 0) {
                     $bgInstaller = Get-Process -Name "*googleearth*", "*setup*", "*msiexec*" -ErrorAction SilentlyContinue |
                                    Where-Object { $_.Path -like "*Google*" -or $_.CommandLine -like "*googleearth*" }
@@ -315,9 +322,14 @@ function Setup-GoogleEarth {
         Write-Host "   [i] Mencoba pemasangan Google Earth Pro via Winget..." -ForegroundColor Yellow
         try {
             & winget install --id "Google.EarthPro" --source winget -e --silent --accept-source-agreements --accept-package-agreements --disable-interactivity 2>$null
-            Start-Sleep -Seconds 3
-            foreach ($gp in $gePaths) {
-                if (Test-Path $gp) { $checkInstalled = $gp; break }
+            $wPoll = 10
+            while ($wPoll -gt 0) {
+                foreach ($gp in $gePaths) {
+                    if (Test-Path $gp) { $checkInstalled = $gp; break }
+                }
+                if ($checkInstalled) { break }
+                Start-Sleep -Seconds 2
+                $wPoll--
             }
         } catch {}
     }
@@ -341,6 +353,21 @@ function Setup-GoogleEarth {
         }
 
         if (-not $checkInstalled) {
+            $regUninstall = Get-ItemProperty @("HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*") -ErrorAction SilentlyContinue |
+                            Where-Object { $_.DisplayName -like "*Google Earth*" } | Select-Object -First 1
+            if ($regUninstall) {
+                $loc = $regUninstall.InstallLocation
+                if ($loc -and (Test-Path (Join-Path $loc "client\googleearth.exe"))) {
+                    $checkInstalled = Join-Path $loc "client\googleearth.exe"
+                } elseif ($loc -and (Test-Path $loc)) {
+                    $checkInstalled = $loc
+                } else {
+                    $checkInstalled = "Google Earth Pro ($($regUninstall.DisplayVersion))"
+                }
+            }
+        }
+
+        if (-not $checkInstalled) {
             $postLnk = Get-ChildItem -Path "C:\ProgramData\Microsoft\Windows\Start Menu\Programs", "$env:APPDATA\Microsoft\Windows\Start Menu\Programs" -Filter "*Google*Earth*.lnk" -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($postLnk) {
                 try {
@@ -353,7 +380,9 @@ function Setup-GoogleEarth {
     }
 
     if ($checkInstalled) {
-        Create-AppShortcut -TargetExe $checkInstalled -ShortcutName "Google Earth Pro"
+        if (Test-Path $checkInstalled -PathType Leaf) {
+            Create-AppShortcut -TargetExe $checkInstalled -ShortcutName "Google Earth Pro"
+        }
         Record-InstallResult -Name "Google Earth Pro" -Status "BERHASIL DIINSTAL" -Keterangan "Terpasang & shortcut dibuat"
         Write-Host "   [OK] Google Earth Pro berhasil dipasang: $checkInstalled" -ForegroundColor Green
     } else {

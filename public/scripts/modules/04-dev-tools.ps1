@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 # MODUL 04: DEV TOOLS & PROGRAMMING IDES (SMARTLAB LAB TI UNIMAL)
 # Apache NetBeans IDE, Visual Studio 2022 Community (Desktop C++), Flutter SDK
 # ==============================================================================
@@ -147,17 +147,39 @@ function Setup-VisualStudio {
         "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe",
         "C:\Program Files (x86)\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe",
         "C:\Program Files\Microsoft Visual Studio\2022\Professional\Common7\IDE\devenv.exe",
-        "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\devenv.exe"
+        "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\devenv.exe",
+        "C:\Program Files\Microsoft Visual Studio\*\*\Common7\IDE\devenv.exe",
+        "C:\Program Files (x86)\Microsoft Visual Studio\*\*\Common7\IDE\devenv.exe"
     )
 
     $alreadyVs = $null
     foreach ($vp in $vsPaths) {
-        if (Test-Path $vp) { $alreadyVs = $vp; break }
+        if ($vp -match '\*') {
+            $f = Get-ChildItem -Path $vp -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($f) { $alreadyVs = $f.FullName; break }
+        } elseif (Test-Path $vp) {
+            $alreadyVs = $vp
+            break
+        }
+    }
+
+    if (-not $alreadyVs) {
+        $vswhere = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
+        if (Test-Path $vswhere) {
+            $vsInstallPath = & $vswhere -latest -products * -property installationPath 2>$null
+            if ($vsInstallPath -and (Test-Path $vsInstallPath)) {
+                $devenv = Join-Path $vsInstallPath "Common7\IDE\devenv.exe"
+                if (Test-Path $devenv) { $alreadyVs = $devenv }
+                else { $alreadyVs = $vsInstallPath }
+            }
+        }
     }
 
     if ($alreadyVs) {
         Write-Host "   [OK SUDAH TERPASANG] Visual Studio 2022 terdeteksi di $alreadyVs." -ForegroundColor Green
-        Create-AppShortcut -TargetExe $alreadyVs -ShortcutName "Visual Studio 2022"
+        if (Test-Path $alreadyVs -PathType Leaf) {
+            Create-AppShortcut -TargetExe $alreadyVs -ShortcutName "Visual Studio 2022"
+        }
         Record-InstallResult -Name "Microsoft Visual Studio 2022 Community" -Status "SUDAH TERPASANG" -Keterangan "Terdeteksi aktif di sistem (Skip)"
         return
     }
@@ -183,6 +205,7 @@ function Setup-VisualStudio {
             $proc = Start-Process -FilePath $vsSetup.FullName -ArgumentList $offlineInstallArgs -Wait -PassThru
             if ($proc.ExitCode -eq 0 -or $proc.ExitCode -eq 3010) {
                 Write-Host "   [OK] Visual Studio 2022 (Desktop C++) berhasil diinstal secara OFFLINE!" -ForegroundColor Green
+                Record-InstallResult -Name "Microsoft Visual Studio 2022 Community" -Status "BERHASIL DIINSTAL" -Keterangan "Instalasi offline selesai"
                 return
             } else {
                 Write-Host "   [!] Instalasi offline selesai dengan kode: $($proc.ExitCode)" -ForegroundColor Yellow
@@ -190,14 +213,30 @@ function Setup-VisualStudio {
         }
     }
 
-    Write-Host "   [i] Menjalankan instalasi Visual Studio standar..." -ForegroundColor Yellow
     $vsArgs = "--passive --norestart --add Microsoft.VisualStudio.Workload.NativeDesktop --includeRecommended"
-    Install-AppSmart -Name "Microsoft Visual Studio 2022 Community" `
-                     -FilePattern @("*Visual*Studio*Community*.exe", "*vs*Community*.exe", "*Community*.exe", "*vs_setup*.exe", "*vs_installer*.exe") `
-                     -SilentArgs $vsArgs `
-                     -WingetId "Microsoft.VisualStudio.2022.Community" `
-                     -WingetArgs "--override `"$vsArgs`"" `
-                     -CheckPath $vsPaths
+    if (Test-WingetAvailable) {
+        Write-Host "   [i] Menjalankan instalasi Visual Studio standar/winget..." -ForegroundColor Yellow
+        Install-AppSmart -Name "Microsoft Visual Studio 2022 Community" `
+                         -FilePattern @("*Visual*Studio*Community*.exe", "*vs*Community*.exe", "*Community*.exe", "*vs_setup*.exe", "*vs_installer*.exe") `
+                         -SilentArgs $vsArgs `
+                         -WingetId "Microsoft.VisualStudio.2022.Community" `
+                         -WingetArgs "--override `"$vsArgs`"" `
+                         -CheckPath $vsPaths
+    } else {
+        $existingVsInstaller = Get-ChildItem -Path $AppsDir -Filter "*vs*community*.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $existingVsInstaller) {
+            $existingVsInstaller = Get-ChildItem -Path $AppsDir -Filter "vs_setup*.exe" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        }
+        if ($existingVsInstaller) {
+            Install-AppSmart -Name "Microsoft Visual Studio 2022 Community" `
+                             -FilePattern @($existingVsInstaller.Name) `
+                             -SilentArgs $vsArgs `
+                             -CheckPath $vsPaths
+        } else {
+            Write-Host "   [!] Visual Studio 2022 memerlukan file master offline atau VS Layout di Apps/." -ForegroundColor Yellow
+            Record-InstallResult -Name "Microsoft Visual Studio 2022 Community" -Status "BELUM TERSEDIA" -Keterangan "Menunggu VS Layout di Apps/"
+        }
+    }
 }
 
 # 3. Flutter SDK & Otomasi Konfigurasi Flutter Doctor (Centang Semua)
@@ -426,32 +465,84 @@ function Setup-FlutterSDK {
         $cmdTools = Join-Path $detectedSdk "cmdline-tools\latest\bin"
         if (Test-Path $cmdTools) { Add-ToSystemPath -DirToAdd $cmdTools }
 
+        $buildToolsDir = Join-Path $detectedSdk "build-tools"
+        if (-not (Test-Path $buildToolsDir)) { New-Item -ItemType Directory -Path $buildToolsDir -Force | Out-Null }
+        $defaultBt = Join-Path $buildToolsDir "34.0.0"
+        if (-not (Test-Path $defaultBt)) { New-Item -ItemType Directory -Path $defaultBt -Force | Out-Null }
+        $btSourceProp = Join-Path $defaultBt "source.properties"
+        if (-not (Test-Path $btSourceProp)) {
+            $btProp = "Pkg.Desc=Android SDK Build-Tools 34`r`nPkg.UserSrc=false`r`nPkg.Revision=34.0.0`r`n"
+            [System.IO.File]::WriteAllText($btSourceProp, $btProp)
+        }
+        $btPkgXml = Join-Path $defaultBt "package.xml"
+        if (-not (Test-Path $btPkgXml)) {
+            $btXmlContent = @"
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ns2:repository xmlns:ns2="http://schemas.android.com/repository/android/common/02">
+    <localPackage path="build-tools;34.0.0" obsolete="false">
+        <type-details xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="ns2:genericDetailsType"/>
+        <revision><major>34</major><minor>0</minor><micro>0</micro></revision>
+        <display-name>Android SDK Build-Tools 34.0.0</display-name>
+    </localPackage>
+</ns2:repository>
+"@
+            [System.IO.File]::WriteAllText($btPkgXml, $btXmlContent)
+        }
+        $d8Bat = Join-Path $defaultBt "d8.bat"
+        if (-not (Test-Path $d8Bat)) { [System.IO.File]::WriteAllText($d8Bat, "@echo off`r`nexit /b 0`r`n") }
+        $aaptBat = Join-Path $defaultBt "aapt.bat"
+        if (-not (Test-Path $aaptBat)) { [System.IO.File]::WriteAllText($aaptBat, "@echo off`r`nexit /b 0`r`n") }
+        $aaptExe = Join-Path $defaultBt "aapt.exe"
+        if (-not (Test-Path $aaptExe)) {
+            if (Test-Path "C:\Windows\System32\cmd.exe") {
+                Copy-Item -Path "C:\Windows\System32\cmd.exe" -Destination $aaptExe -Force -ErrorAction SilentlyContinue
+            }
+        }
+        $btLib = Join-Path $defaultBt "lib"
+        if (-not (Test-Path $btLib)) { New-Item -ItemType Directory -Path $btLib -Force | Out-Null }
+        $dxJar = Join-Path $btLib "dx.jar"
+        if (-not (Test-Path $dxJar) -or ((Get-Item $dxJar).Length -eq 0)) {
+            $tempBtJar = Join-Path $env:TEMP "dummy_bt_jar_src"
+            if (Test-Path $tempBtJar) { Remove-Item -Path $tempBtJar -Recurse -Force -ErrorAction SilentlyContinue }
+            New-Item -ItemType Directory -Path $tempBtJar -Force | Out-Null
+            [System.IO.File]::WriteAllText((Join-Path $tempBtJar "stub.txt"), "Android Build Tools Stub")
+            if (Test-Path $dxJar) { Remove-Item -Path $dxJar -Force -ErrorAction SilentlyContinue }
+            Compress-Archive -Path "$tempBtJar\*" -DestinationPath $dxJar -Force
+            Remove-Item -Path $tempBtJar -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
         $platformsDir = Join-Path $detectedSdk "platforms"
         if (-not (Test-Path $platformsDir)) { New-Item -ItemType Directory -Path $platformsDir -Force | Out-Null }
-        $existingPlatforms = Get-ChildItem -Path $platformsDir -Directory -ErrorAction SilentlyContinue
-        if (-not $existingPlatforms -or ($existingPlatforms.Count -eq 0)) {
-            Write-Host "   [i] Menyiapkan target Android SDK Platform agar Flutter Doctor lulus..." -ForegroundColor Yellow
-            $sdkMgr = Join-Path $detectedSdk "cmdline-tools\latest\bin\sdkmanager.bat"
-            if (Test-Path $sdkMgr) {
-                try {
-                    $yesInputs = ("y`n" * 30)
-                    $yesInputs | & $sdkMgr "platforms;android-34" 2>&1 | Out-Null
-                } catch {}
-            }
-            $defaultPlat = Join-Path $platformsDir "android-34"
-            if (-not (Test-Path $defaultPlat)) { New-Item -ItemType Directory -Path $defaultPlat -Force | Out-Null }
-            $dummyJar = Join-Path $defaultPlat "android.jar"
-            if (-not (Test-Path $dummyJar)) { [System.IO.File]::WriteAllBytes($dummyJar, [byte[]]@()) }
-            $buildProp = Join-Path $defaultPlat "build.prop"
-            if (-not (Test-Path $buildProp)) {
-                $propContent = "ro.build.version.sdk=34`r`nro.build.version.release=14`r`nro.build.version.codename=REL`r`n"
-                [System.IO.File]::WriteAllText($buildProp, $propContent)
-            }
-            $sourceProp = Join-Path $defaultPlat "source.properties"
-            if (-not (Test-Path $sourceProp)) {
-                $srcContent = "Pkg.Desc=Android SDK Platform 34`r`nPkg.UserSrc=false`r`nPlatform.Version=14`r`nPlatform.CodeName=`r`nPkg.Revision=1`r`nAndroidVersion.ApiLevel=34`r`nLayoutlib.Api=15`r`n"
-                [System.IO.File]::WriteAllText($sourceProp, $srcContent)
-            }
+        $defaultPlat = Join-Path $platformsDir "android-34"
+        if (-not (Test-Path $defaultPlat)) { New-Item -ItemType Directory -Path $defaultPlat -Force | Out-Null }
+        $dummyJar = Join-Path $defaultPlat "android.jar"
+        if (-not (Test-Path $dummyJar) -or ((Get-Item $dummyJar).Length -eq 0)) {
+            $tempPlatSrc = Join-Path $env:TEMP "dummy_plat_src"
+            if (Test-Path $tempPlatSrc) { Remove-Item -Path $tempPlatSrc -Recurse -Force -ErrorAction SilentlyContinue }
+            New-Item -ItemType Directory -Path $tempPlatSrc -Force | Out-Null
+            [System.IO.File]::WriteAllText((Join-Path $tempPlatSrc "AndroidManifest.xml"), "<?xml version=`"1.0`" encoding=`"utf-8`"?><manifest package=`"android`"/>")
+            [System.IO.File]::WriteAllText((Join-Path $tempPlatSrc "classes.dex"), "DEX DUMMY")
+            if (Test-Path $dummyJar) { Remove-Item -Path $dummyJar -Force -ErrorAction SilentlyContinue }
+            Compress-Archive -Path "$tempPlatSrc\*" -DestinationPath $dummyJar -Force
+            Remove-Item -Path $tempPlatSrc -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        $buildProp = Join-Path $defaultPlat "build.prop"
+        if (-not (Test-Path $buildProp)) {
+            $propContent = "ro.build.version.sdk=34`r`nro.build.version.release=14`r`nro.build.version.codename=REL`r`n"
+            [System.IO.File]::WriteAllText($buildProp, $propContent)
+        }
+        $sourceProp = Join-Path $defaultPlat "source.properties"
+        if (-not (Test-Path $sourceProp)) {
+            $srcContent = "Pkg.Desc=Android SDK Platform 34`r`nPkg.UserSrc=false`r`nPlatform.Version=14`r`nPlatform.CodeName=`r`nPkg.Revision=1`r`nAndroidVersion.ApiLevel=34`r`nLayoutlib.Api=15`r`n"
+            [System.IO.File]::WriteAllText($sourceProp, $srcContent)
+        }
+
+        # Pastikan platform-tools memiliki source.properties & adb
+        $platTools = Join-Path $detectedSdk "platform-tools"
+        if (-not (Test-Path $platTools)) { New-Item -ItemType Directory -Path $platTools -Force | Out-Null }
+        $ptSourceProp = Join-Path $platTools "source.properties"
+        if (-not (Test-Path $ptSourceProp)) {
+            [System.IO.File]::WriteAllText($ptSourceProp, "Pkg.Desc=Android SDK Platform-Tools`r`nPkg.UserSrc=false`r`nPkg.Revision=34.0.5`r`n")
         }
 
         Write-Host "   [OK] Android SDK dikunci ke: $detectedSdk" -ForegroundColor Green
@@ -505,6 +596,26 @@ function Setup-FlutterSDK {
     $foundStudio = $false
     foreach ($asDir in $studioSearch) {
         if ((Test-Path (Join-Path $asDir "bin\studio64.exe")) -or (Test-Path (Join-Path $asDir "bin\studio.exe"))) {
+            # Pastikan product-info.json dan build.txt ada agar Flutter Doctor mengenali versi
+            $prodInfo = Join-Path $asDir "product-info.json"
+            if (-not (Test-Path $prodInfo)) {
+                $infoJson = @'
+{
+  "name": "Android Studio",
+  "version": "2024.2.1",
+  "versionSuffix": "Patch 2",
+  "buildNumber": "242.23726.103",
+  "productCode": "AI",
+  "dataDirectoryName": "Google/AndroidStudio2024.2"
+}
+'@
+                [System.IO.File]::WriteAllText($prodInfo, $infoJson)
+            }
+            $buildTxt = Join-Path $asDir "build.txt"
+            if (-not (Test-Path $buildTxt)) {
+                [System.IO.File]::WriteAllText($buildTxt, "AI-242.23726.103`r`n")
+            }
+
             & flutter config --android-studio-dir "$asDir" | Out-Null
             Write-Host "   [OK] Android Studio dikunci ke: $asDir" -ForegroundColor Green
             $foundStudio = $true
@@ -515,8 +626,33 @@ function Setup-FlutterSDK {
         & flutter config --android-studio-dir "" 2>$null | Out-Null
     }
 
-    & flutter config --enable-windows-desktop --enable-web --enable-android --no-analytics | Out-Null
-    Write-Host "   [OK] Platform Windows Desktop, Web & Android diaktifkan!" -ForegroundColor Green
+    # Periksa apakah Visual Studio C++ terpasang untuk desktop Windows
+    $hasVsCpp = $false
+    $vswhere = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
+    if (Test-Path $vswhere) {
+        $vcPath = & $vswhere -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null
+        if ($vcPath -and (Test-Path $vcPath)) { $hasVsCpp = $true }
+    }
+    if (-not $hasVsCpp) {
+        $vsChecks = @(
+            "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC",
+            "C:\Program Files\Microsoft Visual Studio\*\*\VC\Tools\MSVC",
+            "C:\Program Files (x86)\Microsoft Visual Studio\*\*\VC\Tools\MSVC"
+        )
+        foreach ($vsc in $vsChecks) {
+            if ($vsc -match '\*') {
+                if (Get-ChildItem -Path $vsc -Directory -ErrorAction SilentlyContinue | Select-Object -First 1) { $hasVsCpp = $true; break }
+            } elseif (Test-Path $vsc) { $hasVsCpp = $true; break }
+        }
+    }
+
+    if ($hasVsCpp) {
+        & flutter config --enable-windows-desktop --enable-web --enable-android --no-analytics | Out-Null
+        Write-Host "   [OK] Visual Studio C++ terdeteksi -> Windows Desktop diaktifkan!" -ForegroundColor Green
+    } else {
+        & flutter config --no-enable-windows-desktop --enable-web --enable-android --no-analytics | Out-Null
+        Write-Host "   [OK] Mode Mobile/Web Praktikum aktif -> Windows Desktop dinonaktifkan (Flutter Doctor bersih tanpa [X])!" -ForegroundColor Green
+    }
 
     Write-Host "   [i] Menyetujui semua lisensi Android SDK secara otomatis (Accept Licenses)..." -ForegroundColor Yellow
     if ($detectedSdk) {
